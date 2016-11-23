@@ -29,6 +29,8 @@ namespace mpmc_tp {
 
 		static constexpr std::size_t COMPILETIME_SIZE = SIZE;
 
+		using SimpleTaskType = std::function<void()>;
+
 		////////////////////////////////////////////////////////////////////////
 
 
@@ -99,7 +101,7 @@ namespace mpmc_tp {
 
 
 		////////////////////////////////////////////////////////////////////////
-		// METHODS FOR JOBS
+		// METHODS FOR TASKS
 		////////////////////////////////////////////////////////////////////////
 
 		inline void start();
@@ -108,6 +110,16 @@ namespace mpmc_tp {
 
 		inline void stop();
 
+		inline ProducerToken newProducerToken();
+
+		inline void pushWork(const SimpleTaskType &task);
+
+		inline void pushWork(SimpleTaskType &&task);
+
+		inline void pushWork(const ProducerToken &token, const SimpleTaskType &task);
+
+		inline void pushWork(const ProducerToken &token, SimpleTaskType &&task);
+
 		////////////////////////////////////////////////////////////////////////
 
 
@@ -115,8 +127,6 @@ namespace mpmc_tp {
 		////////////////////////////////////////////////////////////////////////
 		// PRIVATE DEFINITIONS
 		////////////////////////////////////////////////////////////////////////
-
-		using TaskType = std::function<void()>;
 
 		////////////////////////////////////////////////////////////////////////
 
@@ -137,7 +147,7 @@ namespace mpmc_tp {
 
 		std::array<std::thread, SIZE>    _threads;  ///< Array of thread objects.
 
-		ConcurrentQueue<TaskType>        _taskQueue;///< Queue of tasks.
+		ConcurrentQueue<SimpleTaskType>  _taskQueue;///< Queue of tasks.
 
 		std::atomic_bool                 _active;   ///< Signal for stopping the threads.
 

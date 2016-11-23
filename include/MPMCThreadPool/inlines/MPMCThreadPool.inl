@@ -48,7 +48,7 @@ namespace mpmc_tp {
 
 
 	////////////////////////////////////////////////////////////////////////
-	// METHODS FOR JOBS
+	// METHODS FOR TASKS
 	////////////////////////////////////////////////////////////////////////
 
 	template < std::size_t SIZE >
@@ -57,7 +57,6 @@ namespace mpmc_tp {
 		if (_active.load(std::memory_order::memory_order_relaxed))
 			return;
 		_active.store(true, std::memory_order::memory_order_relaxed);
-//		std::unique_lock<std::mutex> lock(_mutex);
 		for (std::size_t i = 0; i < COMPILETIME_SIZE; ++i)
 			_threads[i] = std::thread(&MPMCThreadPool<SIZE>::threadJob, this);
 	}
@@ -76,6 +75,41 @@ namespace mpmc_tp {
 		for (std::size_t i = 0; i < COMPILETIME_SIZE; ++i)
 			if (_threads[i].joinable())
 				_threads[i].join();
+		_taskQueue = ConcurrentQueue<SimpleTaskType>();
+	}
+
+	template < std::size_t SIZE >
+	inline ProducerToken MPMCThreadPool<SIZE>::newProducerToken()
+	{
+		return ProducerToken(_taskQueue);
+	}
+
+	template < std::size_t SIZE >
+	inline void MPMCThreadPool<SIZE>::pushWork(const MPMCThreadPool<SIZE>::SimpleTaskType &task)
+	{
+		_taskQueue.enqueue(task);
+		_condVar.notify_one();
+	}
+
+	template < std::size_t SIZE >
+	inline void MPMCThreadPool<SIZE>::pushWork(MPMCThreadPool<SIZE>::SimpleTaskType &&task)
+	{
+		_taskQueue.enqueue(std::forward<SimpleTaskType>(task));
+		_condVar.notify_one();
+	}
+
+	template < std::size_t SIZE >
+	inline void MPMCThreadPool<SIZE>::pushWork(const ProducerToken &token, const MPMCThreadPool<SIZE>::SimpleTaskType &task)
+	{
+		_taskQueue.enqueue(token, task);
+		_condVar.notify_one();
+	}
+
+	template < std::size_t SIZE >
+	inline void MPMCThreadPool<SIZE>::pushWork(const ProducerToken &token, MPMCThreadPool<SIZE>::SimpleTaskType &&task)
+	{
+		_taskQueue.enqueue(token, std::forward<SimpleTaskType>(task));
+		_condVar.notify_one();
 	}
 
 	////////////////////////////////////////////////////////////////////////
@@ -89,10 +123,11 @@ namespace mpmc_tp {
 	template < std::size_t SIZE >
 	inline void MPMCThreadPool<SIZE>::threadJob()
 	{
-		TaskType task;
+		SimpleTaskType task;
 		while (_active.load(std::memory_order::memory_order_relaxed)) {
 			if (_taskQueue.try_dequeue(task)) {
-				task();
+				if (task)
+					task();
 			} else {
 				std::unique_lock<std::mutex> lock(_mutex);
 				_condVar.wait(lock, [this]()->bool{

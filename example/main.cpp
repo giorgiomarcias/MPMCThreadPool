@@ -17,10 +17,42 @@ int main(int argc, char *argv[])
 	threadPool.start();
 	std::cout << "started!" << std::endl;
 
-	std::this_thread::sleep_for(std::chrono::seconds(30));
+	mpmc_tp::ProducerToken producerToken = threadPool.newProducerToken();
 
-	std::cout << "Stopping 2 threads...";
-	std::cout.flush();
+	std::atomic_flag flag = ATOMIC_FLAG_INIT;
+	for (std::size_t i = 0; i < 10; ++i)
+		threadPool.pushWork(producerToken, [&flag, i](){
+			while (flag.test_and_set())
+				;
+			std::cout << "Done task " << i << std::endl;
+			flag.clear();
+		});
+
+
+	while (flag.test_and_set())
+		;
+	std::cout << "Sleep for 10 seconds..." << std::endl;
+	flag.clear();
+	std::this_thread::sleep_for(std::chrono::seconds(10));
+
+	for (std::size_t i = 10; i < 20; ++i)
+		threadPool.pushWork(producerToken, [&flag, i](){
+			while (flag.test_and_set())
+				;
+			std::cout << "Done task " << i << std::endl;
+			flag.clear();
+		});
+
+	while (flag.test_and_set())
+		;
+	std::cout << "Sleep for 10 seconds..." << std::endl;
+	flag.clear();
+	std::this_thread::sleep_for(std::chrono::seconds(10));
+
+	while (flag.test_and_set())
+		;
+	std::cout << "Stopping 2 threads..." << std::endl;
+	flag.clear();
 	threadPool.stop();
 	std::cout << "Stopped!" << std::endl;
 }
