@@ -9,10 +9,37 @@
 #define MPMCThreadPool_hpp
 
 #include <concurrentqueue/concurrentqueue.h>
+#include <vector>
 
 namespace mpmc_tp {
 
 	using namespace moodycamel;
+
+
+
+	////////////////////////////////////////////////////////////////////////////
+	// NAMESPACE-LEVEL DEFINITIONS
+	////////////////////////////////////////////////////////////////////////////
+
+	using SimpleTaskType = std::function<void()>;
+
+	////////////////////////////////////////////////////////////////////////////
+
+
+	namespace internal {
+		template < class R >
+		class TaskPackBase {
+		private:
+			std::vector<std::function<R()>>  _tasks;
+			std::atomic_size_t               _nCompletedTasks;
+		};
+	}
+
+	template < class R >
+	class TaskPack {
+	private:
+		std::vector<R>      _returnValues;
+	};
 
 
 
@@ -28,8 +55,6 @@ namespace mpmc_tp {
 		////////////////////////////////////////////////////////////////////////
 
 		static constexpr std::size_t COMPILETIME_SIZE = SIZE;
-
-		using SimpleTaskType = std::function<void()>;
 
 		////////////////////////////////////////////////////////////////////////
 

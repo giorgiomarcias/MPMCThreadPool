@@ -85,28 +85,28 @@ namespace mpmc_tp {
 	}
 
 	template < std::size_t SIZE >
-	inline void MPMCThreadPool<SIZE>::pushWork(const MPMCThreadPool<SIZE>::SimpleTaskType &task)
+	inline void MPMCThreadPool<SIZE>::pushWork(const SimpleTaskType &task)
 	{
 		_taskQueue.enqueue(task);
 		_condVar.notify_one();
 	}
 
 	template < std::size_t SIZE >
-	inline void MPMCThreadPool<SIZE>::pushWork(MPMCThreadPool<SIZE>::SimpleTaskType &&task)
+	inline void MPMCThreadPool<SIZE>::pushWork(SimpleTaskType &&task)
 	{
 		_taskQueue.enqueue(std::forward<SimpleTaskType>(task));
 		_condVar.notify_one();
 	}
 
 	template < std::size_t SIZE >
-	inline void MPMCThreadPool<SIZE>::pushWork(const ProducerToken &token, const MPMCThreadPool<SIZE>::SimpleTaskType &task)
+	inline void MPMCThreadPool<SIZE>::pushWork(const ProducerToken &token, const SimpleTaskType &task)
 	{
 		_taskQueue.enqueue(token, task);
 		_condVar.notify_one();
 	}
 
 	template < std::size_t SIZE >
-	inline void MPMCThreadPool<SIZE>::pushWork(const ProducerToken &token, MPMCThreadPool<SIZE>::SimpleTaskType &&task)
+	inline void MPMCThreadPool<SIZE>::pushWork(const ProducerToken &token, SimpleTaskType &&task)
 	{
 		_taskQueue.enqueue(token, std::forward<SimpleTaskType>(task));
 		_condVar.notify_one();
