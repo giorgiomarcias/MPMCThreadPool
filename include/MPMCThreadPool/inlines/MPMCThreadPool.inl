@@ -147,32 +147,29 @@ namespace mpmc_tp {
 
 
 
+
+
 	namespace internal {
 
-		inline internal::TaskPackBase::TaskPackBase(const std::size_t size) : _nCompletedTasks(0), _tasks(size)
+		inline TaskPackBase::TaskPackBase(const std::size_t size) : _tasks(size)
 		{ }
 
-		inline std::size_t internal::TaskPackBase::size() const
+		inline std::size_t TaskPackBase::size() const
 		{
 			return _tasks.size();
 		}
 
-		inline std::size_t internal::TaskPackBase::nCompletedTasks() const
-		{
-			return _nCompletedTasks.load(std::memory_order::memory_order_relaxed);
-		}
-
-		inline internal::TaskPackBase::iterator internal::TaskPackBase::begin()
+		inline TaskPackBase::iterator TaskPackBase::begin()
 		{
 			return _tasks.begin();
 		}
 
-		inline internal::TaskPackBase::const_iterator internal::TaskPackBase::begin() const
+		inline TaskPackBase::const_iterator TaskPackBase::begin() const
 		{
 			return _tasks.begin();
 		}
 
-		inline internal::TaskPackBase::move_iterator internal::TaskPackBase::moveBegin()
+		inline TaskPackBase::move_iterator TaskPackBase::moveBegin()
 		{
 			return std::make_move_iterator(_tasks.begin());
 		}
@@ -196,40 +193,67 @@ namespace mpmc_tp {
 
 
 
-	template < class R >
-	inline TaskPack<R>::TaskPack(const std::size_t size) : internal::TaskPackBase(size), _results(size, R())
+	inline TaskPackTraitsLockFree::TaskPackTraitsLockFree(const std::size_t size) : _size(size), _nCompletedTasks(0)
 	{ }
 
-	template < class R > template < class F, class ...Args >
-	inline void TaskPack<R>::setTaskAt(const std::size_t i, F &&f, Args &&...args)
+	inline std::size_t TaskPackTraitsLockFree::nCompletedTasks() const
+	{
+		return _nCompletedTasks.load(std::memory_order::memory_order_relaxed);
+	}
+
+	inline void TaskPackTraitsLockFree::signalTaskComplete(const std::size_t)
+	{
+		_nCompletedTasks.fetch_add(1, std::memory_order::memory_order_relaxed);
+	}
+
+	inline void TaskPackTraitsLockFree::wait()
+	{
+		while (_nCompletedTasks.load(std::memory_order::memory_order_relaxed) < _size)
+			;
+	}
+
+	inline SimpleTaskType TaskPackTraitsLockFree::createWaitTask()
+	{
+		return SimpleTaskType();
+	}
+
+
+
+	template < class R, class TaskPackTraits > template < class ...Args >
+	inline TaskPack<R, TaskPackTraits>::TaskPack(const std::size_t size, Args &&...args) : internal::TaskPackBase(size), TaskPackTraits(size, std::forward<args>(args)...), _results(size, R())
+	{ }
+
+	template < class R, class TaskPackTraits > template < class F, class ...Args >
+	inline void TaskPack<R, TaskPackTraits>::setTaskAt(const std::size_t i, F &&f, Args &&...args)
 	{
 		static_assert(std::is_convertible<typename std::result_of<F(Args...)>::type, R>::value, "Result type of callable object must be same of TaskPack template parameter.");
 		auto g = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
 		_tasks.at(i) = [i, g, this](){
 			_results.at(i) = g();
-			_nCompletedTasks.fetch_add(1, std::memory_order::memory_order_relaxed);
+			TaskPackTraits::signalTaskComplete(i);
 		};
 	}
 
-	template < class R >
-	inline const R & TaskPack<R>::resultAt(const std::size_t i) const
+	template < class R, class TaskPackTraits >
+	inline const R & TaskPack<R, TaskPackTraits>::resultAt(const std::size_t i) const
 	{
 		return _results.at(i);
 	}
 
 
 
-	inline TaskPack<void>::TaskPack(const std::size_t size) : internal::TaskPackBase(size)
+	template < class TaskPackTraits > template < class ...Args >
+	inline TaskPack<void, TaskPackTraits>::TaskPack(const std::size_t size, Args &&...args) : internal::TaskPackBase(size), TaskPackTraits(size, std::forward<args>(args)...)
 	{ }
 
-	template < class F, class ...Args >
-	inline void TaskPack<void>::setTaskAt(const std::size_t i, F &&f, Args &&...args)
+	template < class TaskPackTraits > template < class F, class ...Args >
+	inline void TaskPack<void, TaskPackTraits>::setTaskAt(const std::size_t i, F &&f, Args &&...args)
 	{
 		static_assert(std::is_void<typename std::result_of<F(Args...)>::type>::value, "Result type of callable object must be same of TaskPack template parameter.");
 		auto g = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
 		_tasks.at(i) = [i, g, this](){
 			g();
-			_nCompletedTasks.fetch_add(1, std::memory_order::memory_order_relaxed);
+			TaskPackTraits::signalTaskComplete(i);
 		};
 	}
 

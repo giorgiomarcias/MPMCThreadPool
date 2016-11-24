@@ -192,7 +192,6 @@ namespace mpmc_tp {
 			TaskPackBase & operator=(TaskPackBase &&) = delete;
 
 			inline std::size_t size() const;
-			inline std::size_t nCompletedTasks() const;
 
 			inline iterator begin();
 			inline const_iterator begin() const;
@@ -202,19 +201,60 @@ namespace mpmc_tp {
 			inline const_iterator end() const;
 			inline move_iterator moveEnd();
 
+			inline const SimpleTaskType & at(const std::size_t i) const;
+			inline SimpleTaskType & at(const std::size_t i);
+
+			inline const SimpleTaskType & operator[](const std::size_t i) const;
+			inline SimpleTaskType & operator[](const std::size_t i);
+
 		protected:
-			std::atomic_size_t   _nCompletedTasks;
 			SimpleTaskContainer  _tasks;
 		};
 	}
 
-	template < class R >
-	class TaskPack : public internal::TaskPackBase {
+
+
+	class TaskPackTraitsLockFree {
+	public:
+		inline TaskPackTraitsLockFree(const std::size_t size);
+
+		inline TaskPackTraitsLockFree(const TaskPackTraitsLockFree &) = delete;
+		inline TaskPackTraitsLockFree(TaskPackTraitsLockFree &&) = delete;
+
+		inline TaskPackTraitsLockFree & operator=(const TaskPackTraitsLockFree &) = delete;
+		inline TaskPackTraitsLockFree & operator=(TaskPackTraitsLockFree &&) = delete;
+
+		inline std::size_t nCompletedTasks() const;
+
+		inline void signalTaskComplete(const std::size_t);
+
+		inline void wait();
+
+	protected:
+		inline SimpleTaskType createWaitTask();
+
+		std::size_t         _size;
+		std::atomic_size_t  _nCompletedTasks;
+
+	};
+
+
+
+	using TaskPackTraitsDefault = TaskPackTraitsLockFree;
+
+
+
+	template < class R, class TaskPackTraits = TaskPackTraitsDefault >
+	class TaskPack : public internal::TaskPackBase, public TaskPackTraits {
+		static_assert(!std::is_void<decltype(std::declval<TaskPackTraits>().signalTaskComplete(std::declval<const std::size_t>()))>::value, "TaskPackTraits template parameter must have a 'void signalTaskComplete(const std::size_t)' member function.");
+		static_assert(!std::is_void<decltype(std::declval<TaskPackTraits>().createWaitTask())>::value && std::is_convertible<typename std::result_of<decltype(std::declval<TaskPackTraits>().createWaitTask())>::type, SimpleTaskType>::value, "TaskPackTraits template parameter must have a 'SimpleTaskType createWaitTask()' member function.");
+
 	protected:
 		using internal::TaskPackBase::Container;
 
 	public:
-		inline TaskPack(const std::size_t size);
+		template < class ...Args >
+		inline TaskPack(const std::size_t size, Args &&...args);
 
 		TaskPack(const TaskPack &) = delete;
 		TaskPack(TaskPack &&) = delete;
@@ -231,10 +271,13 @@ namespace mpmc_tp {
 		Container<R>  _results;
 	};
 
-	template <>
-	class TaskPack<void> : public internal::TaskPackBase {
+
+
+	template < class TaskPackTraits >
+	class TaskPack<void, TaskPackTraits> : public internal::TaskPackBase, public TaskPackTraits {
 	public:
-		inline TaskPack(const std::size_t size);
+		template < class ...Args >
+		inline TaskPack(const std::size_t size, Args &&...args);
 
 		TaskPack(const TaskPack &) = delete;
 		TaskPack(TaskPack &&) = delete;
