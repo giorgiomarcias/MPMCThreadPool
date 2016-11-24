@@ -10,6 +10,7 @@
 
 #include <concurrentqueue/concurrentqueue.h>
 #include <vector>
+#include <future>
 
 namespace mpmc_tp {
 
@@ -24,22 +25,6 @@ namespace mpmc_tp {
 	using SimpleTaskType = std::function<void()>;
 
 	////////////////////////////////////////////////////////////////////////////
-
-
-	namespace internal {
-		template < class R >
-		class TaskPackBase {
-		private:
-			std::vector<std::function<R()>>  _tasks;
-			std::atomic_size_t               _nCompletedTasks;
-		};
-	}
-
-	template < class R >
-	class TaskPack {
-	private:
-		std::vector<R>      _returnValues;
-	};
 
 
 
@@ -129,21 +114,21 @@ namespace mpmc_tp {
 		// METHODS FOR TASKS
 		////////////////////////////////////////////////////////////////////////
 
-		inline void start();
-
-		inline void interrupt();
-
-		inline void stop();
-
 		inline ProducerToken newProducerToken();
 
-		inline void pushWork(const SimpleTaskType &task);
+		inline void pushTask(const SimpleTaskType &task);
 
-		inline void pushWork(SimpleTaskType &&task);
+		inline void pushTask(SimpleTaskType &&task);
 
-		inline void pushWork(const ProducerToken &token, const SimpleTaskType &task);
+		inline void pushTask(const ProducerToken &token, const SimpleTaskType &task);
 
-		inline void pushWork(const ProducerToken &token, SimpleTaskType &&task);
+		inline void pushTask(const ProducerToken &token, SimpleTaskType &&task);
+
+		template < class It >
+		inline void pushTasks(It first, It last);
+
+		template < class It >
+		inline void pushTasks(const ProducerToken &token, It first, It last);
 
 		////////////////////////////////////////////////////////////////////////
 
@@ -181,6 +166,84 @@ namespace mpmc_tp {
 
 		////////////////////////////////////////////////////////////////////////
 
+	};
+
+
+
+	namespace internal {
+
+		class TaskPackBase {
+		protected:
+			template < class T >
+			using Container = std::vector<T>;
+			using SimpleTaskContainer = Container<SimpleTaskType>;
+
+		public:
+			using iterator       = SimpleTaskContainer::iterator;
+			using const_iterator = SimpleTaskContainer::const_iterator;
+			using move_iterator  = std::move_iterator<iterator>;
+
+			inline TaskPackBase(const std::size_t size);
+
+			TaskPackBase(const TaskPackBase &) = delete;
+			TaskPackBase(TaskPackBase &&) = delete;
+
+			TaskPackBase & operator=(const TaskPackBase &) = delete;
+			TaskPackBase & operator=(TaskPackBase &&) = delete;
+
+			inline std::size_t size() const;
+			inline std::size_t nCompletedTasks() const;
+
+			inline iterator begin();
+			inline const_iterator begin() const;
+			inline move_iterator moveBegin();
+
+			inline iterator end();
+			inline const_iterator end() const;
+			inline move_iterator moveEnd();
+
+		protected:
+			std::atomic_size_t   _nCompletedTasks;
+			SimpleTaskContainer  _tasks;
+		};
+	}
+
+	template < class R >
+	class TaskPack : public internal::TaskPackBase {
+	protected:
+		using internal::TaskPackBase::Container;
+
+	public:
+		inline TaskPack(const std::size_t size);
+
+		TaskPack(const TaskPack &) = delete;
+		TaskPack(TaskPack &&) = delete;
+
+		TaskPack & operator=(const TaskPack &) = delete;
+		TaskPack & operator=(TaskPack &&) = delete;
+
+		template < class F, class ...Args >
+		inline void setTaskAt(const std::size_t i, F &&f, Args &&...args);
+
+		const R & resultAt(const std::size_t i) const;
+
+	private:
+		Container<R>  _results;
+	};
+
+	template <>
+	class TaskPack<void> : public internal::TaskPackBase {
+	public:
+		inline TaskPack(const std::size_t size);
+
+		TaskPack(const TaskPack &) = delete;
+		TaskPack(TaskPack &&) = delete;
+
+		TaskPack & operator=(const TaskPack &) = delete;
+		TaskPack & operator=(TaskPack &&) = delete;
+
+		template < class F, class ...Args >
+		inline void setTaskAt(const std::size_t i, F &&f, Args &&...args);
 	};
 
 }
