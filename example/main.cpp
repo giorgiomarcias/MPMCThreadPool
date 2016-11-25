@@ -9,12 +9,19 @@
 #include <iostream>
 #include <sstream>
 #include <iomanip>
+#include <algorithm>
 
-void count_to(const std::size_t n)
+std::size_t sum_to(const std::size_t n)
 {
 	std::size_t total = 0;
 	for (std::size_t i = 0; i < n; ++i)
 		++total;
+	return total;
+}
+
+void count_to(const std::size_t n)
+{
+	sum_to(n);
 }
 
 int main(int argc, char *argv[])
@@ -59,42 +66,47 @@ int main(int argc, char *argv[])
 
 
 
-	mpmc_tp::TaskPack<void> taskPack0(100);
-	for (std::size_t i = 0; i < taskPack0.size(); ++i)
-		taskPack0.setTaskAt(i, count_to, i * 1000000);
-	threadPool.pushTask(producerToken, [&flag, &taskPack0](){
-		std::stringstream stream;
-		stream << "Completed " << std::setw(3) << std::setfill(' ') << taskPack0.nCompletedTasks();
-		while (flag.test_and_set())
-			;
-		std::cout << stream.str();
-		std::cout.flush();
-		flag.clear();
-		std::size_t nChars = stream.str().size();
-		while (taskPack0.nCompletedTasks() < taskPack0.size()) {
-			stream.str(std::string());
-			stream << "Completed " << std::setw(3) << std::setfill(' ') << taskPack0.nCompletedTasks();
-			while (flag.test_and_set())
-				;
-			for (std::size_t c = 0; c < nChars; ++c)
-				std::cout << '\b';
-			std::cout << stream.str();
-			std::cout.flush();
-			flag.clear();
-			nChars = stream.str().size();
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
-		}
-		stream.str(std::string());
-		stream << "Completed " << std::setw(3) << std::setfill(' ') << taskPack0.nCompletedTasks();
-		while (flag.test_and_set())
-			;
-		for (std::size_t c = 0; c < nChars; ++c)
-			std::cout << '\b';
-		std::cout << stream.str() << std::endl;
-		flag.clear();
+	mpmc_tp::TaskPack<std::size_t, mpmc_tp::TaskPackTraitsSimpleBlocking<std::size_t>> taskPack0(101, std::chrono::milliseconds(10));
+	for (std::size_t i = 0; i < taskPack0.size()-1; ++i)
+		taskPack0.setTaskAt(i, sum_to, i * 1000000);
+//	threadPool.pushTask(producerToken, [&flag, &taskPack0](){
+//		std::stringstream stream;
+//		stream << "Completed " << std::setw(3) << std::setfill(' ') << taskPack0.nCompletedTasks();
+//		while (flag.test_and_set())
+//			;
+//		std::cout << stream.str();
+//		std::cout.flush();
+//		flag.clear();
+//		std::size_t nChars = stream.str().size();
+//		while (taskPack0.nCompletedTasks() < taskPack0.size()) {
+//			stream.str(std::string());
+//			stream << "Completed " << std::setw(3) << std::setfill(' ') << taskPack0.nCompletedTasks();
+//			while (flag.test_and_set())
+//				;
+//			for (std::size_t c = 0; c < nChars; ++c)
+//				std::cout << '\b';
+//			std::cout << stream.str();
+//			std::cout.flush();
+//			flag.clear();
+//			nChars = stream.str().size();
+//			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+//		}
+//		stream.str(std::string());
+//		stream << "Completed " << std::setw(3) << std::setfill(' ') << taskPack0.nCompletedTasks();
+//		while (flag.test_and_set())
+//			;
+//		for (std::size_t c = 0; c < nChars; ++c)
+//			std::cout << '\b';
+//		std::cout << stream.str() << std::endl;
+//		flag.clear();
+//	});
+	taskPack0.setReduce([&taskPack0]()->std::size_t{
+		std::size_t total = 0;
+		for (std::size_t i = 0; i < taskPack0.size(); ++i)
+			total += taskPack0.resultAt(i);
+		return total;
 	});
+	taskPack0.setTaskAt(taskPack0.size()-1, taskPack0.createWaitTask());
 	threadPool.pushTasks(producerToken, taskPack0.moveBegin(), taskPack0.moveEnd());
-	std::this_thread::sleep_for(std::chrono::seconds(10));
-	while (taskPack0.nCompletedTasks() < taskPack0.size())
-		;
+	taskPack0.wait();
 }

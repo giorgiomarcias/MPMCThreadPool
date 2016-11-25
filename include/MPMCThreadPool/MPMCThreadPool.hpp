@@ -214,45 +214,91 @@ namespace mpmc_tp {
 
 
 
-	class TaskPackTraitsLockFree {
+	class TaskPackTraitsSimple {
 	public:
-		inline TaskPackTraitsLockFree(const std::size_t size);
+		inline TaskPackTraitsSimple(const std::size_t size);
 
-		inline TaskPackTraitsLockFree(const TaskPackTraitsLockFree &) = delete;
-		inline TaskPackTraitsLockFree(TaskPackTraitsLockFree &&) = delete;
+		inline TaskPackTraitsSimple(const TaskPackTraitsSimple &) = delete;
+		inline TaskPackTraitsSimple(TaskPackTraitsSimple &&) = delete;
 
-		inline TaskPackTraitsLockFree & operator=(const TaskPackTraitsLockFree &) = delete;
-		inline TaskPackTraitsLockFree & operator=(TaskPackTraitsLockFree &&) = delete;
-
-		inline std::size_t nCompletedTasks() const;
+		inline TaskPackTraitsSimple & operator=(const TaskPackTraitsSimple &) = delete;
+		inline TaskPackTraitsSimple & operator=(TaskPackTraitsSimple &&) = delete;
 
 		inline void signalTaskComplete(const std::size_t);
 
+		inline std::size_t nCompletedTasks() const;
+
 		inline void wait();
 
-	protected:
-		inline SimpleTaskType createWaitTask();
-
+	private:
 		std::size_t         _size;
 		std::atomic_size_t  _nCompletedTasks;
-
 	};
 
 
 
-	using TaskPackTraitsDefault = TaskPackTraitsLockFree;
+	template < class R >
+	class TaskPackTraitsSimpleBlocking {
+	public:
+		inline TaskPackTraitsSimpleBlocking(const std::size_t size);
+
+		template < class Rep, class Period >
+		inline TaskPackTraitsSimpleBlocking(const std::size_t size, const std::chrono::duration<Rep, Period> &interval);
+
+		template < class Rep, class Period >
+		inline TaskPackTraitsSimpleBlocking(const std::size_t size, std::chrono::duration<Rep, Period> &&interval);
+
+		inline TaskPackTraitsSimpleBlocking(const TaskPackTraitsSimpleBlocking &) = delete;
+		inline TaskPackTraitsSimpleBlocking(TaskPackTraitsSimpleBlocking &&) = delete;
+
+		inline TaskPackTraitsSimpleBlocking & operator=(const TaskPackTraitsSimpleBlocking &) = delete;
+		inline TaskPackTraitsSimpleBlocking & operator=(TaskPackTraitsSimpleBlocking &&) = delete;
+
+		template < class Rep, class Period >
+		inline void setInterval(const std::chrono::duration<Rep, Period> &interval);
+
+		inline void signalTaskComplete(const std::size_t);
+
+		inline std::size_t nCompletedTasks() const;
+
+		template < class F, class ...Args >
+		inline void setReduce(F &&f, Args &&...args);
+
+		inline std::function<R()> createWaitTask();
+
+		inline void wait();
+
+		inline R getResult() const;
+
+	private:
+		inline R waitJob();
+		inline void prepareFuture();
+
+		std::size_t               _size;
+		std::atomic_size_t        _nCompletedTasks;
+		std::chrono::nanoseconds  _interval;
+		std::function<R()>        _reduce;
+		std::future<R>            _result;
+	};
+
+
+
+	using TaskPackTraitsDefault = TaskPackTraitsSimple;
 
 
 
 	template < class R, class TaskPackTraits = TaskPackTraitsDefault >
 	class TaskPack : public internal::TaskPackBase, public TaskPackTraits {
-		static_assert(!std::is_void<decltype(std::declval<TaskPackTraits>().signalTaskComplete(std::declval<const std::size_t>()))>::value, "TaskPackTraits template parameter must have a 'void signalTaskComplete(const std::size_t)' member function.");
-		static_assert(!std::is_void<decltype(std::declval<TaskPackTraits>().createWaitTask())>::value && std::is_convertible<typename std::result_of<decltype(std::declval<TaskPackTraits>().createWaitTask())>::type, SimpleTaskType>::value, "TaskPackTraits template parameter must have a 'SimpleTaskType createWaitTask()' member function.");
+
+		static_assert(std::is_void<decltype(std::declval<TaskPackTraits>().signalTaskComplete(std::declval<std::size_t>()))>::value, "TaskPackTraits template parameter must have a 'void signalTaskComplete(const std::size_t)' member function.");
 
 	protected:
 		using internal::TaskPackBase::Container;
 
 	public:
+		template < class ...Args >
+		inline TaskPack(const std::size_t size, const Args &...args);
+
 		template < class ...Args >
 		inline TaskPack(const std::size_t size, Args &&...args);
 
@@ -275,7 +321,13 @@ namespace mpmc_tp {
 
 	template < class TaskPackTraits >
 	class TaskPack<void, TaskPackTraits> : public internal::TaskPackBase, public TaskPackTraits {
+
+		static_assert(std::is_void<decltype(std::declval<TaskPackTraits>().signalTaskComplete(std::declval<std::size_t>()))>::value, "TaskPackTraits template parameter must have a 'void signalTaskComplete(const std::size_t)' member function.");
+
 	public:
+		template < class ...Args >
+		inline TaskPack(const std::size_t size, const Args &...args);
+
 		template < class ...Args >
 		inline TaskPack(const std::size_t size, Args &&...args);
 

@@ -6,6 +6,7 @@
 // email: marcias.giorgio@gmail.com
 
 #include <MPMCThreadPool/MPMCThreadPool.hpp>
+#include <future>
 
 namespace mpmc_tp {
 
@@ -193,34 +194,117 @@ namespace mpmc_tp {
 
 
 
-	inline TaskPackTraitsLockFree::TaskPackTraitsLockFree(const std::size_t size) : _size(size), _nCompletedTasks(0)
+	inline TaskPackTraitsSimple::TaskPackTraitsSimple(const std::size_t size) : _size(size), _nCompletedTasks(0)
 	{ }
 
-	inline std::size_t TaskPackTraitsLockFree::nCompletedTasks() const
-	{
-		return _nCompletedTasks.load(std::memory_order::memory_order_relaxed);
-	}
-
-	inline void TaskPackTraitsLockFree::signalTaskComplete(const std::size_t)
+	inline void TaskPackTraitsSimple::signalTaskComplete(const std::size_t)
 	{
 		_nCompletedTasks.fetch_add(1, std::memory_order::memory_order_relaxed);
 	}
 
-	inline void TaskPackTraitsLockFree::wait()
+	inline std::size_t TaskPackTraitsSimple::nCompletedTasks() const
+	{
+		return _nCompletedTasks.load(std::memory_order::memory_order_relaxed);
+	}
+
+	inline void TaskPackTraitsSimple::wait()
 	{
 		while (_nCompletedTasks.load(std::memory_order::memory_order_relaxed) < _size)
 			;
 	}
 
-	inline SimpleTaskType TaskPackTraitsLockFree::createWaitTask()
+
+
+	template < class R >
+	inline TaskPackTraitsSimpleBlocking<R>::TaskPackTraitsSimpleBlocking(const std::size_t size) : _size(size), _nCompletedTasks(0), _interval(0)
+	{ }
+
+	template < class R > template < class Rep, class Period >
+	inline TaskPackTraitsSimpleBlocking<R>::TaskPackTraitsSimpleBlocking(const std::size_t size, const std::chrono::duration<Rep, Period> &interval) : _size(size), _nCompletedTasks(0), _interval(interval)
+	{ }
+
+	template < class R > template < class Rep, class Period >
+	inline TaskPackTraitsSimpleBlocking<R>::TaskPackTraitsSimpleBlocking(const std::size_t size, std::chrono::duration<Rep, Period> &&interval) : _size(size), _nCompletedTasks(0), _interval(interval)
+	{ }
+
+	template < class R > template < class Rep, class Period >
+	inline void TaskPackTraitsSimpleBlocking<R>::setInterval(const std::chrono::duration<Rep, Period> &interval)
 	{
-		return SimpleTaskType();
+		_interval = interval;
+	}
+
+	template < class R >
+	inline void TaskPackTraitsSimpleBlocking<R>::signalTaskComplete(const std::size_t)
+	{
+		_nCompletedTasks.fetch_add(1, std::memory_order::memory_order_relaxed);
+	}
+
+	template < class R >
+	inline std::size_t TaskPackTraitsSimpleBlocking<R>::nCompletedTasks() const
+	{
+		return _nCompletedTasks.load(std::memory_order::memory_order_relaxed);
+	}
+
+	template < class R > template < class F, class ...Args >
+	inline void TaskPackTraitsSimpleBlocking<R>::setReduce(F &&f, Args &&...args)
+	{
+		_reduce = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
+	}
+
+	template < class R >
+	inline std::function<R()> TaskPackTraitsSimpleBlocking<R>::createWaitTask()
+	{
+		if (_size == 0)
+			return std::function<R()>();
+		--_size;
+		std::packaged_task<R()> waitPackagedTask([this]()->R{ return waitJob(); });
+		_result = waitPackagedTask.get_future();
+		return waitPackagedTask;
+	}
+
+	template < class R >
+	inline void TaskPackTraitsSimpleBlocking<R>::wait()
+	{
+		prepareFuture();
+		_result.wait();
+	}
+
+	template < class R >
+	inline R TaskPackTraitsSimpleBlocking<R>::getResult() const
+	{
+		prepareFuture();
+		return _result.get();
+	}
+
+	template < class R >
+	inline R TaskPackTraitsSimpleBlocking<R>::waitJob()
+	{
+		while (_nCompletedTasks.load(std::memory_order::memory_order_relaxed) < _size)
+			if (_interval.count() > 0)
+				std::this_thread::sleep_for(_interval);
+		if (_reduce)
+			return _reduce();
+		return R();
+	}
+
+	template < class R >
+	inline void TaskPackTraitsSimpleBlocking<R>::prepareFuture()
+	{
+		if (!_result.valid()) {
+			std::packaged_task<R()> waitPackagedTask([this]()->R{ waitJob(); });
+			_result = waitPackagedTask.get_future();
+			waitPackagedTask();
+		}
 	}
 
 
 
 	template < class R, class TaskPackTraits > template < class ...Args >
-	inline TaskPack<R, TaskPackTraits>::TaskPack(const std::size_t size, Args &&...args) : internal::TaskPackBase(size), TaskPackTraits(size, std::forward<args>(args)...), _results(size, R())
+	inline TaskPack<R, TaskPackTraits>::TaskPack(const std::size_t size, const Args &...args) : internal::TaskPackBase(size), TaskPackTraits(size, args...), _results(size, R())
+	{ }
+
+	template < class R, class TaskPackTraits > template < class ...Args >
+	inline TaskPack<R, TaskPackTraits>::TaskPack(const std::size_t size, Args &&...args) : internal::TaskPackBase(size), TaskPackTraits(size, std::forward<Args>(args)...), _results(size, R())
 	{ }
 
 	template < class R, class TaskPackTraits > template < class F, class ...Args >
@@ -243,7 +327,11 @@ namespace mpmc_tp {
 
 
 	template < class TaskPackTraits > template < class ...Args >
-	inline TaskPack<void, TaskPackTraits>::TaskPack(const std::size_t size, Args &&...args) : internal::TaskPackBase(size), TaskPackTraits(size, std::forward<args>(args)...)
+	inline TaskPack<void, TaskPackTraits>::TaskPack(const std::size_t size, const Args &...args) : internal::TaskPackBase(size), TaskPackTraits(size, args...)
+	{ }
+
+	template < class TaskPackTraits > template < class ...Args >
+	inline TaskPack<void, TaskPackTraits>::TaskPack(const std::size_t size, Args &&...args) : internal::TaskPackBase(size), TaskPackTraits(size, std::forward<Args>(args)...)
 	{ }
 
 	template < class TaskPackTraits > template < class F, class ...Args >
