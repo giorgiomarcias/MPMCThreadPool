@@ -278,7 +278,7 @@ namespace mpmc_tp {
 		std::atomic_size_t        _nCompletedTasks;
 		std::chrono::nanoseconds  _interval;
 		std::function<R()>        _reduce;
-		std::future<R>            _result;
+		std::shared_future<R>     _result;
 	};
 
 

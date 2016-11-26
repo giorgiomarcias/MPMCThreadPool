@@ -259,7 +259,7 @@ namespace mpmc_tp {
 		--_size;
 		std::packaged_task<R()> waitPackagedTask([this]()->R{ return waitJob(); });
 		_result = waitPackagedTask.get_future();
-		return waitPackagedTask;
+		return [this]()->R{ return _result.get(); };
 	}
 
 	template < class R >
@@ -291,7 +291,7 @@ namespace mpmc_tp {
 	inline void TaskPackTraitsSimpleBlocking<R>::prepareFuture()
 	{
 		if (!_result.valid()) {
-			std::packaged_task<R()> waitPackagedTask([this]()->R{ waitJob(); });
+			std::packaged_task<R()> waitPackagedTask([this]()->R{ return waitJob(); });
 			_result = waitPackagedTask.get_future();
 			waitPackagedTask();
 		}
