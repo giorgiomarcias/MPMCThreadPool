@@ -109,4 +109,5 @@ int main(int argc, char *argv[])
 	taskPack0.setTaskAt(taskPack0.size()-1, taskPack0.createWaitTask());
 	threadPool.pushTasks(producerToken, taskPack0.moveBegin(), taskPack0.moveEnd());
 	taskPack0.wait();
+	std::cout << "Result = " << taskPack0.getResult() << std::endl;
 }

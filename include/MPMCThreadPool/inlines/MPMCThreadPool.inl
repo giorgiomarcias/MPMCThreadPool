@@ -257,45 +257,37 @@ namespace mpmc_tp {
 		if (_size == 0)
 			return std::function<R()>();
 		--_size;
-		std::packaged_task<R()> waitPackagedTask([this]()->R{ return waitJob(); });
-		_result = waitPackagedTask.get_future();
-		return [this]()->R{ return _result.get(); };
+		return std::bind(&TaskPackTraitsSimpleBlocking<R>::waitAndReduce, this);
 	}
 
 	template < class R >
 	inline void TaskPackTraitsSimpleBlocking<R>::wait()
 	{
-		prepareFuture();
-		_result.wait();
-	}
-
-	template < class R >
-	inline R TaskPackTraitsSimpleBlocking<R>::getResult() const
-	{
-		prepareFuture();
-		return _result.get();
-	}
-
-	template < class R >
-	inline R TaskPackTraitsSimpleBlocking<R>::waitJob()
-	{
 		while (_nCompletedTasks.load(std::memory_order::memory_order_relaxed) < _size)
 			if (_interval.count() > 0)
 				std::this_thread::sleep_for(_interval);
-		if (_reduce)
-			return _reduce();
-		return R();
 	}
 
 	template < class R >
-	inline void TaskPackTraitsSimpleBlocking<R>::prepareFuture()
+	inline const R & TaskPackTraitsSimpleBlocking<R>::waitAndReduce()
 	{
-		if (!_result.valid()) {
-			std::packaged_task<R()> waitPackagedTask([this]()->R{ return waitJob(); });
-			_result = waitPackagedTask.get_future();
-			waitPackagedTask();
-		}
+		wait();
+		if (_reduce)
+			_reducedResult = _reduce();
+		else
+			_reducedResult = R();
+		_condVar.notify_all();
+		return _reducedResult;
 	}
+
+	template < class R >
+	inline const R & TaskPackTraitsSimpleBlocking<R>::getResult() const
+	{
+		std::unique_lock<std::mutex> lock(_mutex);
+		_condVar.wait(lock, [this]()->bool{ return _nCompletedTasks.load(std::memory_order::memory_order_relaxed) >= _size; });
+		return _reducedResult;
+	}
+
 
 
 

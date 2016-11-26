@@ -268,17 +268,19 @@ namespace mpmc_tp {
 
 		inline void wait();
 
-		inline R getResult() const;
+		inline const R & waitAndReduce();
+
+		inline const R & getResult() const;
 
 	private:
-		inline R waitJob();
-		inline void prepareFuture();
 
-		std::size_t               _size;
-		std::atomic_size_t        _nCompletedTasks;
-		std::chrono::nanoseconds  _interval;
-		std::function<R()>        _reduce;
-		std::shared_future<R>     _result;
+		std::size_t                      _size;
+		std::atomic_size_t               _nCompletedTasks;
+		std::chrono::nanoseconds         _interval;
+		std::function<R()>               _reduce;
+		R                                _reducedResult;
+		mutable std::mutex               _mutex;
+		mutable std::condition_variable  _condVar;
 	};
 
 
