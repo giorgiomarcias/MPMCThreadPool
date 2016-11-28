@@ -28,7 +28,24 @@ namespace mpmc_tp {
 
 
 
-	/// The MPMCThreadPool class
+	/// The MPMCThreadPool class represents a pool of a fixed number (at compile
+	/// time) of threads.
+	/// Threads are instantiated and invoked when a MPMCThreadPool object is
+	/// constructed and they are kept alive for the whole lifetime of the thread
+	/// pool.
+	/// At any time, any instantiated thread either is performing a task or is
+	/// wating for a new task to perform to become available.
+	/// Users of the thread pool can post tasks and, possibly, wait for their
+	/// completion.
+	/// The thread pool keeps a lock-free queue of tasks (that can be copied or
+	/// moved) allowing for fast single post or bulk post (which is faster than
+	/// multiple single enqueuings). For further information on such performant
+	/// lock-free queue see https://github.com/cameron314/concurrentqueue
+	/// This thread pool is completely thread-safe and multiple producers can
+	/// post tasks independently without needing to sinchronize.
+	/// For slightly better performance, each producer (i.e. a user that posts
+	/// tasks and runs in a given thread) can get and specify a token allowing
+	/// faster enqueuing.
 	template < std::size_t SIZE >
 	class MPMCThreadPool {
 	public:
@@ -50,18 +67,18 @@ namespace mpmc_tp {
 		////////////////////////////////////////////////////////////////////////
 
 		/**
-		 *    @brief Default constructor.
+		 *    @brief Default constructor. It instantiates and invokes threads.
 		 */
 		inline MPMCThreadPool();
 
 
 		/**
-		 *    @brief Copy constructor.
+		 *    @brief Copy constructor. MPMCThreadPools can't be copied.
 		 */
 		MPMCThreadPool(const MPMCThreadPool &other) = delete;
 
 		/**
-		 *    @brief Move constructor.
+		 *    @brief Move constructor. MPMCThreadPools can't be moved.
 		 */
 		MPMCThreadPool(MPMCThreadPool &&other) = default;
 
@@ -74,7 +91,7 @@ namespace mpmc_tp {
 		////////////////////////////////////////////////////////////////////////
 
 		/**
-		 *    @brief Default destructor.
+		 *    @brief Default destructor. It stops and delete threads.
 		 */
 		inline ~MPMCThreadPool();
 
@@ -87,12 +104,12 @@ namespace mpmc_tp {
 		////////////////////////////////////////////////////////////////////////
 
 		/**
-		 *    @brief Copy assignment operator.
+		 *    @brief Copy assignment operator. MPMCThreadPools can't be copied.
 		 */
 		MPMCThreadPool & operator=(const MPMCThreadPool &other) = delete;
 
 		/**
-		 *    @brief Move assignment operator.
+		 *    @brief Move assignment operator. MPMCThreadPools can't be moved.
 		 */
 		MPMCThreadPool & operator=(MPMCThreadPool &&other) = default;
 
@@ -104,6 +121,10 @@ namespace mpmc_tp {
 		// ACCESS METHODS
 		////////////////////////////////////////////////////////////////////////
 
+
+		/**
+		 *    @brief Returns the size (as defined at compile time) of the pool.
+		 */
 		inline constexpr std::size_t size() const;
 
 		////////////////////////////////////////////////////////////////////////
@@ -114,21 +135,60 @@ namespace mpmc_tp {
 		// METHODS FOR TASKS
 		////////////////////////////////////////////////////////////////////////
 
+
+		/**
+		 *   @brief Obtain a new producer token for posting tasks faster.
+		 */
 		inline ProducerToken newProducerToken();
 
-		inline void pushTask(const SimpleTaskType &task);
 
-		inline void pushTask(SimpleTaskType &&task);
+		/**
+		 *   @brief Post a single task by copying it into the queue.
+		 *   @param task         The task to copy into the queue.
+		 */
+		inline void postTask(const SimpleTaskType &task);
 
-		inline void pushTask(const ProducerToken &token, const SimpleTaskType &task);
+		/**
+		 *   @brief Post a single task by moving it into the queue.
+		 *   @param task         The task to move into the queue.
+		 */
+		inline void postTask(SimpleTaskType &&task);
 
-		inline void pushTask(const ProducerToken &token, SimpleTaskType &&task);
+		/**
+		 *   @brief Post a single task by copying it into the queue, specifying
+		 *          the producer token. This results in faster enqueuing.
+		 *   @param token     The producer token for faster enqueuing.
+		 *   @param task      The task to copy into the queue.
+		 */
+		inline void postTask(const ProducerToken &token, const SimpleTaskType &task);
 
+		/**
+		 *   @brief Post a single task by moving it into the queue, specifying
+		 *          the producer token. This results in faster enqueuing.
+		 *   @param token     The producer token for faster enqueuing.
+		 *   @param task      The task to move into the queue.
+		 */
+		inline void postTask(const ProducerToken &token, SimpleTaskType &&task);
+
+		/**
+		 *   @brief Post a bulk of tasks. Pass a std::move_iterator for moving
+		 *          tasks into the queue.
+		 *   @param first     The iterator to the first task to enqueue.
+		 *   @param task      The iterator to the last task (except) to enqueue.
+		 */
 		template < class It >
-		inline void pushTasks(It first, It last);
+		inline void postTasks(It first, It last);
 
+		/**
+		 *   @brief Post a bulk of tasks, specifying the producer token. This
+		 *          results in faster enqueuing. Pass a std::move_iterator for
+		 *          moving tasks into the queue.
+		 *   @param token     The producer token for faster enqueuing.
+		 *   @param first     The iterator to the first task to enqueue.
+		 *   @param task      The iterator to the last task (except) to enqueue.
+		 */
 		template < class It >
-		inline void pushTasks(const ProducerToken &token, It first, It last);
+		inline void postTasks(const ProducerToken &token, It first, It last);
 
 		////////////////////////////////////////////////////////////////////////
 
@@ -146,6 +206,13 @@ namespace mpmc_tp {
 		// PRIVATE METHODS
 		////////////////////////////////////////////////////////////////////////
 
+
+		/**
+		 *   @brief This specifies the job of the threads: they wait for tasks
+		 *          to be enqueued, dequeue one of them and perform it. They
+		 *          loop in this wait-dequeue-perform until the thread pool is
+		 *          destructed.
+		 */
 		inline void threadJob();
 
 		////////////////////////////////////////////////////////////////////////
@@ -210,13 +277,63 @@ namespace mpmc_tp {
 		protected:
 			SimpleTaskContainer  _tasks;
 		};
+
+		class TaskPackTraitsBase {
+		public:
+			inline TaskPackTraitsBase(const std::size_t size);
+
+			template < class Rep, class Period >
+			inline TaskPackTraitsBase(const std::size_t size, const std::chrono::duration<Rep, Period> &interval);
+
+			template < class Rep, class Period >
+			inline TaskPackTraitsBase(const std::size_t size, std::chrono::duration<Rep, Period> &&interval);
+
+			inline TaskPackTraitsBase(const TaskPackTraitsBase &) = delete;
+			inline TaskPackTraitsBase(TaskPackTraitsBase &&) = delete;
+
+			inline TaskPackTraitsBase & operator=(const TaskPackTraitsBase &) = delete;
+			inline TaskPackTraitsBase & operator=(TaskPackTraitsBase &&) = delete;
+
+			template < class Rep, class Period >
+			inline void setInterval(const std::chrono::duration<Rep, Period> &interval);
+
+			template < class C, class ...Args >
+			inline void setCallback(const C &c, const Args &...args);
+
+			template < class C, class ...Args >
+			inline void setCallback(C &&c, Args &&...args);
+
+			inline void signalTaskComplete(const std::size_t i);
+
+			inline std::size_t nCompletedTasks() const;
+
+			inline void wait() const;
+
+		protected:
+			std::size_t                      _size;
+			std::atomic_size_t               _nCompletedTasks;
+			std::chrono::nanoseconds         _interval;
+			std::function<void(std::size_t)> _callback;
+			std::atomic_bool                 _completed;
+			mutable std::mutex               _mutex;
+			mutable std::condition_variable  _condVar;
+		};
+
 	}
 
 
 
-	class TaskPackTraitsSimple {
+
+	template < class R >
+	class TaskPackTraitsSimple : public internal::TaskPackTraitsBase {
 	public:
 		inline TaskPackTraitsSimple(const std::size_t size);
+
+		template < class Rep, class Period >
+		inline TaskPackTraitsSimple(const std::size_t size, const std::chrono::duration<Rep, Period> &interval);
+
+		template < class Rep, class Period >
+		inline TaskPackTraitsSimple(const std::size_t size, std::chrono::duration<Rep, Period> &&interval);
 
 		inline TaskPackTraitsSimple(const TaskPackTraitsSimple &) = delete;
 		inline TaskPackTraitsSimple(TaskPackTraitsSimple &&) = delete;
@@ -224,76 +341,47 @@ namespace mpmc_tp {
 		inline TaskPackTraitsSimple & operator=(const TaskPackTraitsSimple &) = delete;
 		inline TaskPackTraitsSimple & operator=(TaskPackTraitsSimple &&) = delete;
 
-		template < class C, class ...Args >
-		inline void setCallback(C &&c, Args &&...args);
-
-		inline void signalTaskComplete(const std::size_t i);
-
-		inline std::size_t nCompletedTasks() const;
-
-		inline void wait();
-
-	private:
-		std::size_t                      _size;
-		std::atomic_size_t               _nCompletedTasks;
-		std::function<void(std::size_t)> _callback;
-	};
-
-
-
-	template < class R >
-	class TaskPackTraitsSimpleBlocking {
-	public:
-		inline TaskPackTraitsSimpleBlocking(const std::size_t size);
-
-		template < class Rep, class Period >
-		inline TaskPackTraitsSimpleBlocking(const std::size_t size, const std::chrono::duration<Rep, Period> &interval);
-
-		template < class Rep, class Period >
-		inline TaskPackTraitsSimpleBlocking(const std::size_t size, std::chrono::duration<Rep, Period> &&interval);
-
-		inline TaskPackTraitsSimpleBlocking(const TaskPackTraitsSimpleBlocking &) = delete;
-		inline TaskPackTraitsSimpleBlocking(TaskPackTraitsSimpleBlocking &&) = delete;
-
-		inline TaskPackTraitsSimpleBlocking & operator=(const TaskPackTraitsSimpleBlocking &) = delete;
-		inline TaskPackTraitsSimpleBlocking & operator=(TaskPackTraitsSimpleBlocking &&) = delete;
-
-		template < class Rep, class Period >
-		inline void setInterval(const std::chrono::duration<Rep, Period> &interval);
-
-		template < class C, class ...Args >
-		inline void setCallback(C &&c, Args &&...args);
-
-		inline void signalTaskComplete(const std::size_t i);
-
-		inline std::size_t nCompletedTasks() const;
-
 		template < class F, class ...Args >
 		inline void setReduce(F &&f, Args &&...args);
 
-		inline const R & waitAndReduce();
+		inline const R & waitCompletionAndReduce();
 
 		inline std::function<R()> createWaitTask();
-
-		inline void wait() const;
 
 		inline const R & getResult() const;
 
 	private:
-		std::size_t                      _size;
-		std::atomic_size_t               _nCompletedTasks;
-		std::chrono::nanoseconds         _interval;
-		std::function<void(std::size_t)> _callback;
 		std::function<R()>               _reduce;
 		R                                _reducedResult;
-		std::atomic_bool                 _reducedResultReady;
-		mutable std::mutex               _mutex;
-		mutable std::condition_variable  _condVar;
 	};
 
 
 
-	using TaskPackTraitsDefault = TaskPackTraitsSimple;
+	template <>
+	class TaskPackTraitsSimple<void> : public internal::TaskPackTraitsBase {
+	public:
+		inline TaskPackTraitsSimple(const std::size_t size);
+
+		template < class Rep, class Period >
+		inline TaskPackTraitsSimple(const std::size_t size, const std::chrono::duration<Rep, Period> &interval);
+
+		template < class Rep, class Period >
+		inline TaskPackTraitsSimple(const std::size_t size, std::chrono::duration<Rep, Period> &&interval);
+
+		inline TaskPackTraitsSimple(const TaskPackTraitsSimple &) = delete;
+		inline TaskPackTraitsSimple(TaskPackTraitsSimple &&) = delete;
+
+		inline TaskPackTraitsSimple & operator=(const TaskPackTraitsSimple &) = delete;
+		inline TaskPackTraitsSimple & operator=(TaskPackTraitsSimple &&) = delete;
+
+		inline void waitCompletion();
+
+		inline std::function<void()> createWaitTask();
+	};
+
+
+
+	using TaskPackTraitsDefault = TaskPackTraitsSimple<void>;
 
 
 
