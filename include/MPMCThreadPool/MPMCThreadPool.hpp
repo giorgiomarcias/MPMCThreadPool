@@ -224,15 +224,19 @@ namespace mpmc_tp {
 		inline TaskPackTraitsSimple & operator=(const TaskPackTraitsSimple &) = delete;
 		inline TaskPackTraitsSimple & operator=(TaskPackTraitsSimple &&) = delete;
 
-		inline void signalTaskComplete(const std::size_t);
+		template < class C, class ...Args >
+		inline void setCallback(C &&c, Args &&...args);
+
+		inline void signalTaskComplete(const std::size_t i);
 
 		inline std::size_t nCompletedTasks() const;
 
 		inline void wait();
 
 	private:
-		std::size_t         _size;
-		std::atomic_size_t  _nCompletedTasks;
+		std::size_t                      _size;
+		std::atomic_size_t               _nCompletedTasks;
+		std::function<void(std::size_t)> _callback;
 	};
 
 
@@ -257,28 +261,32 @@ namespace mpmc_tp {
 		template < class Rep, class Period >
 		inline void setInterval(const std::chrono::duration<Rep, Period> &interval);
 
-		inline void signalTaskComplete(const std::size_t);
+		template < class C, class ...Args >
+		inline void setCallback(C &&c, Args &&...args);
+
+		inline void signalTaskComplete(const std::size_t i);
 
 		inline std::size_t nCompletedTasks() const;
 
 		template < class F, class ...Args >
 		inline void setReduce(F &&f, Args &&...args);
 
+		inline const R & waitAndReduce();
+
 		inline std::function<R()> createWaitTask();
 
-		inline void wait();
-
-		inline const R & waitAndReduce();
+		inline void wait() const;
 
 		inline const R & getResult() const;
 
 	private:
-
 		std::size_t                      _size;
 		std::atomic_size_t               _nCompletedTasks;
 		std::chrono::nanoseconds         _interval;
+		std::function<void(std::size_t)> _callback;
 		std::function<R()>               _reduce;
 		R                                _reducedResult;
+		std::atomic_bool                 _reducedResultReady;
 		mutable std::mutex               _mutex;
 		mutable std::condition_variable  _condVar;
 	};

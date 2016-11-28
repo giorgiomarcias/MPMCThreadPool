@@ -77,8 +77,14 @@ int main(int argc, char *argv[])
 	});
 	taskPack0.setTaskAt(taskPack0.size()-1, taskPack0.createWaitTask());
 	threadPool.pushTasks(producerToken, taskPack0.moveBegin(), taskPack0.moveEnd());
+	taskPack0.setCallback([&flag](const std::size_t i){
+		while (flag.test_and_set())
+			;
+		std::cout << "Done task " << i << std::endl;
+		flag.clear();
+	});
 //	taskPack0.waitAndReduce();
-	taskPack0.wait();
+//	taskPack0.wait();
 	std::cout << "Result = " << taskPack0.getResult() << std::endl;
 	std::size_t total = 0;
 	for (std::size_t i = 0; i < taskPack0.size()-1; ++i)

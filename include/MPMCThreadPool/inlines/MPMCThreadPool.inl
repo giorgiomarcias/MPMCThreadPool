@@ -197,9 +197,18 @@ namespace mpmc_tp {
 	inline TaskPackTraitsSimple::TaskPackTraitsSimple(const std::size_t size) : _size(size), _nCompletedTasks(0)
 	{ }
 
-	inline void TaskPackTraitsSimple::signalTaskComplete(const std::size_t)
+	template < class C, class ...Args >
+	inline void TaskPackTraitsSimple::setCallback(C &&c, Args &&...args)
+	{
+		_callback = std::bind(std::forward<C>(c), std::placeholders::_1, std::forward<Args>(args)...);
+	}
+
+	inline void TaskPackTraitsSimple::signalTaskComplete(const std::size_t i)
 	{
 		_nCompletedTasks.fetch_add(1, std::memory_order::memory_order_relaxed);
+		if (_callback)
+			_callback(i);
+
 	}
 
 	inline std::size_t TaskPackTraitsSimple::nCompletedTasks() const
@@ -216,15 +225,15 @@ namespace mpmc_tp {
 
 
 	template < class R >
-	inline TaskPackTraitsSimpleBlocking<R>::TaskPackTraitsSimpleBlocking(const std::size_t size) : _size(size), _nCompletedTasks(0), _interval(0)
+	inline TaskPackTraitsSimpleBlocking<R>::TaskPackTraitsSimpleBlocking(const std::size_t size) : _size(size), _nCompletedTasks(0), _interval(0), _reducedResultReady(false)
 	{ }
 
 	template < class R > template < class Rep, class Period >
-	inline TaskPackTraitsSimpleBlocking<R>::TaskPackTraitsSimpleBlocking(const std::size_t size, const std::chrono::duration<Rep, Period> &interval) : _size(size), _nCompletedTasks(0), _interval(interval)
+	inline TaskPackTraitsSimpleBlocking<R>::TaskPackTraitsSimpleBlocking(const std::size_t size, const std::chrono::duration<Rep, Period> &interval) : _size(size), _nCompletedTasks(0), _interval(interval), _reducedResultReady(false)
 	{ }
 
 	template < class R > template < class Rep, class Period >
-	inline TaskPackTraitsSimpleBlocking<R>::TaskPackTraitsSimpleBlocking(const std::size_t size, std::chrono::duration<Rep, Period> &&interval) : _size(size), _nCompletedTasks(0), _interval(interval)
+	inline TaskPackTraitsSimpleBlocking<R>::TaskPackTraitsSimpleBlocking(const std::size_t size, std::chrono::duration<Rep, Period> &&interval) : _size(size), _nCompletedTasks(0), _interval(interval), _reducedResultReady(false)
 	{ }
 
 	template < class R > template < class Rep, class Period >
@@ -233,10 +242,18 @@ namespace mpmc_tp {
 		_interval = interval;
 	}
 
+	template < class R > template < class C, class ...Args >
+	inline void TaskPackTraitsSimpleBlocking<R>::setCallback(C &&c, Args &&...args)
+	{
+		_callback = std::bind(std::forward<C>(c), std::placeholders::_1, std::forward<Args>(args)...);
+	}
+
 	template < class R >
-	inline void TaskPackTraitsSimpleBlocking<R>::signalTaskComplete(const std::size_t)
+	inline void TaskPackTraitsSimpleBlocking<R>::signalTaskComplete(const std::size_t i)
 	{
 		_nCompletedTasks.fetch_add(1, std::memory_order::memory_order_relaxed);
+		if (_callback)
+			_callback(i);
 	}
 
 	template < class R >
@@ -252,6 +269,21 @@ namespace mpmc_tp {
 	}
 
 	template < class R >
+	inline const R & TaskPackTraitsSimpleBlocking<R>::waitAndReduce()
+	{
+		while (_nCompletedTasks.load(std::memory_order::memory_order_relaxed) < _size)
+			if (_interval.count() > 0)
+				std::this_thread::sleep_for(_interval);
+		if (_reduce)
+			_reducedResult = _reduce();
+		else
+			_reducedResult = R();
+		_reducedResultReady.store(true, std::memory_order::memory_order_release);
+		_condVar.notify_all();
+		return _reducedResult;
+	}
+
+	template < class R >
 	inline std::function<R()> TaskPackTraitsSimpleBlocking<R>::createWaitTask()
 	{
 		if (_size == 0)
@@ -261,30 +293,16 @@ namespace mpmc_tp {
 	}
 
 	template < class R >
-	inline void TaskPackTraitsSimpleBlocking<R>::wait()
+	inline void TaskPackTraitsSimpleBlocking<R>::wait() const
 	{
-		while (_nCompletedTasks.load(std::memory_order::memory_order_relaxed) < _size)
-			if (_interval.count() > 0)
-				std::this_thread::sleep_for(_interval);
-	}
-
-	template < class R >
-	inline const R & TaskPackTraitsSimpleBlocking<R>::waitAndReduce()
-	{
-		wait();
-		if (_reduce)
-			_reducedResult = _reduce();
-		else
-			_reducedResult = R();
-		_condVar.notify_all();
-		return _reducedResult;
+		std::unique_lock<std::mutex> lock(_mutex);
+		_condVar.wait(lock, [this]()->bool{ return _reducedResultReady.load(std::memory_order::memory_order_acquire); });
 	}
 
 	template < class R >
 	inline const R & TaskPackTraitsSimpleBlocking<R>::getResult() const
 	{
-		std::unique_lock<std::mutex> lock(_mutex);
-		_condVar.wait(lock, [this]()->bool{ return _nCompletedTasks.load(std::memory_order::memory_order_relaxed) >= _size; });
+		wait();
 		return _reducedResult;
 	}
 
