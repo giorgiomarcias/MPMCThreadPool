@@ -14,65 +14,57 @@ namespace mpmc_tp {
 	// MPMCThreadPool METHODS
 	////////////////////////////////////////////////////////////////////////////
 
-	template < std::size_t SIZE >
-	inline MPMCThreadPool<SIZE>::MPMCThreadPool() : _active(true)
+	inline MPMCThreadPool::MPMCThreadPool(const std::size_t size) : _threads(size), _active(true)
 	{
-		for (std::size_t i = 0; i < COMPILETIME_SIZE; ++i)
-			_threads[i] = std::thread(&MPMCThreadPool<SIZE>::threadJob, this);
+		for (std::size_t i = 0; i < _threads.size(); ++i)
+			_threads[i] = std::thread(&MPMCThreadPool::threadJob, this);
 	}
 
-	template < std::size_t SIZE >
-	inline MPMCThreadPool<SIZE>::~MPMCThreadPool()
+	inline MPMCThreadPool::~MPMCThreadPool()
 	{
 		_active.store(false, std::memory_order::memory_order_relaxed);
 		_condVar.notify_all();
-		for (std::size_t i = 0; i < COMPILETIME_SIZE; ++i)
+		for (std::size_t i = 0; i < _threads.size(); ++i)
 			if (_threads[i].joinable())
 				_threads[i].join();
 	}
 
-	template < std::size_t SIZE >
-	inline constexpr std::size_t MPMCThreadPool<SIZE>::size() const
+	inline std::size_t MPMCThreadPool::size() const
 	{
-		return COMPILETIME_SIZE;
+		return _threads.size();
 	}
 
-	template < std::size_t SIZE >
-	inline ProducerToken MPMCThreadPool<SIZE>::newProducerToken()
+	inline ProducerToken MPMCThreadPool::newProducerToken()
 	{
 		return ProducerToken(_taskQueue);
 	}
 
-	template < std::size_t SIZE >
-	inline void MPMCThreadPool<SIZE>::postTask(const SimpleTaskType &task)
+	inline void MPMCThreadPool::postTask(const SimpleTaskType &task)
 	{
 		_taskQueue.enqueue(task);
 		_condVar.notify_one();
 	}
 
-	template < std::size_t SIZE >
-	inline void MPMCThreadPool<SIZE>::postTask(SimpleTaskType &&task)
+	inline void MPMCThreadPool::postTask(SimpleTaskType &&task)
 	{
 		_taskQueue.enqueue(std::forward<SimpleTaskType>(task));
 		_condVar.notify_one();
 	}
 
-	template < std::size_t SIZE >
-	inline void MPMCThreadPool<SIZE>::postTask(const ProducerToken &token, const SimpleTaskType &task)
+	inline void MPMCThreadPool::postTask(const ProducerToken &token, const SimpleTaskType &task)
 	{
 		_taskQueue.enqueue(token, task);
 		_condVar.notify_one();
 	}
 
-	template < std::size_t SIZE >
-	inline void MPMCThreadPool<SIZE>::postTask(const ProducerToken &token, SimpleTaskType &&task)
+	inline void MPMCThreadPool::postTask(const ProducerToken &token, SimpleTaskType &&task)
 	{
 		_taskQueue.enqueue(token, std::forward<SimpleTaskType>(task));
 		_condVar.notify_one();
 	}
 
-	template < std::size_t SIZE > template < class It >
-	inline void MPMCThreadPool<SIZE>::postTasks(It first, It last)
+	template < class It >
+	inline void MPMCThreadPool::postTasks(It first, It last)
 	{
 		std::size_t n = std::distance(first, last);
 		if (n == 0)
@@ -84,8 +76,8 @@ namespace mpmc_tp {
 			_condVar.notify_one();
 	}
 
-	template < std::size_t SIZE > template < class It >
-	inline void MPMCThreadPool<SIZE>::postTasks(const ProducerToken &token, It first, It last)
+	template < class It >
+	inline void MPMCThreadPool::postTasks(const ProducerToken &token, It first, It last)
 	{
 		std::size_t n = std::distance(first, last);
 		if (n == 0)
@@ -97,8 +89,7 @@ namespace mpmc_tp {
 			_condVar.notify_one();
 	}
 
-	template < std::size_t SIZE >
-	inline void MPMCThreadPool<SIZE>::threadJob()
+	inline void MPMCThreadPool::threadJob()
 	{
 		SimpleTaskType task;
 		while (_active.load(std::memory_order::memory_order_relaxed)) {
@@ -322,9 +313,22 @@ namespace mpmc_tp {
 	{ }
 
 	template < class R, class TaskPackTraits > template < class F, class ...Args >
+	inline void TaskPack<R, TaskPackTraits>::setTaskAt(const std::size_t i, const F &f, const Args &...args)
+	{
+		static_assert(std::is_convertible<typename std::result_of<F(Args...)>::type, R>::value, "Result type of callable object must be same of TaskPack template parameter.");
+		static_assert(std::is_void<decltype(std::declval<TaskPack<R, TaskPackTraits>>().signalTaskComplete(std::declval<std::size_t>()))>::value, "TaskPackTraits template parameter must have a 'void signalTaskComplete(std::size_t)' method.");
+		auto g = std::bind(f, args...);
+		_tasks.at(i) = [i, g, this](){
+			_results.at(i) = g();
+			this->signalTaskComplete(i);
+		};
+	}
+
+	template < class R, class TaskPackTraits > template < class F, class ...Args >
 	inline void TaskPack<R, TaskPackTraits>::setTaskAt(const std::size_t i, F &&f, Args &&...args)
 	{
 		static_assert(std::is_convertible<typename std::result_of<F(Args...)>::type, R>::value, "Result type of callable object must be same of TaskPack template parameter.");
+		static_assert(std::is_void<decltype(std::declval<TaskPack<R, TaskPackTraits>>().signalTaskComplete(std::declval<std::size_t>()))>::value, "TaskPackTraits template parameter must have a 'void signalTaskComplete(std::size_t)' method.");
 		auto g = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
 		_tasks.at(i) = [i, g, this](){
 			_results.at(i) = g();
@@ -361,6 +365,7 @@ namespace mpmc_tp {
 	inline void TaskPack<void, TaskPackTraits>::setTaskAt(const std::size_t i, F &&f, Args &&...args)
 	{
 		static_assert(std::is_void<typename std::result_of<F(Args...)>::type>::value, "Result type of callable object must be same of TaskPack template parameter.");
+		static_assert(std::is_void<decltype(std::declval<TaskPack<void, TaskPackTraits>>().signalTaskComplete(std::declval<std::size_t>()))>::value, "TaskPackTraits template parameter must have a 'void signalTaskComplete(std::size_t)' method.");
 		auto g = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
 		_tasks.at(i) = [i, g, this](){
 			g();

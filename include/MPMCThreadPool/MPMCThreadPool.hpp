@@ -27,8 +27,7 @@ namespace mpmc_tp {
 
 
 
-	/// The MPMCThreadPool class represents a pool of a fixed number (at compile
-	/// time) of threads.
+	/// The MPMCThreadPool class represents a pool of a fixed number of threads.
 	/// Threads are instantiated and invoked when a MPMCThreadPool object is
 	/// constructed and they are kept alive for the whole lifetime of the thread
 	/// pool.
@@ -45,23 +44,8 @@ namespace mpmc_tp {
 	/// For slightly better performance, each producer (i.e. a user that posts
 	/// tasks and runs in a given thread) can get and specify a token allowing
 	/// faster enqueuing.
-	/// @param SIZE  Template parameter setting the fixed number of threads.
-	template < std::size_t SIZE >
 	class MPMCThreadPool {
-
-		static_assert(SIZE > 0UL, "Invalid thread pool size: it must own at least one thread.");
-
 	public:
-
-		////////////////////////////////////////////////////////////////////////
-		// DEFINITIONS
-		////////////////////////////////////////////////////////////////////////
-
-		static constexpr std::size_t COMPILETIME_SIZE = SIZE;
-
-		////////////////////////////////////////////////////////////////////////
-
-
 
 		////////////////////////////////////////////////////////////////////////
 		// CONSTRUCTORS
@@ -70,7 +54,7 @@ namespace mpmc_tp {
 		/**
 		 *    @brief Default constructor. It instantiates and invokes threads.
 		 */
-		inline MPMCThreadPool();
+		inline MPMCThreadPool(const std::size_t size);
 
 		/**
 		 *    @brief Copy constructor. MPMCThreadPools can't be copied.
@@ -122,9 +106,9 @@ namespace mpmc_tp {
 		////////////////////////////////////////////////////////////////////////
 
 		/**
-		 *    @brief Returns the size (as defined at compile time) of the pool.
+		 *    @brief Returns the size of the pool.
 		 */
-		inline constexpr std::size_t size() const;
+		inline std::size_t size() const;
 
 		////////////////////////////////////////////////////////////////////////
 
@@ -214,7 +198,7 @@ namespace mpmc_tp {
 		// PRIVATE MEMBERS
 		////////////////////////////////////////////////////////////////////////
 
-		std::array<std::thread, SIZE>    _threads;  ///< Array of thread objects.
+		std::vector<std::thread>         _threads;  ///< Array of thread objects.
 
 		ConcurrentQueue<SimpleTaskType>  _taskQueue;///< Queue of tasks.
 
@@ -526,7 +510,7 @@ namespace mpmc_tp {
 
 		/**
 		 *   @brief Constructor with initial size. The default interval is 0.
-		 *   @param size     The size corresponds to the number of packed tasks..
+		 *   @param size     The size corresponds to the number of packed tasks.
 		 */
 		inline TaskPackTraitsBlocking(const std::size_t size);
 
@@ -745,33 +729,122 @@ namespace mpmc_tp {
 
 
 
+	/// The TaskPack class is the most general class for packing tasks.
+	/// It needs two template parameters:
+	/// @param R               is the return type of the tasks to perform
+	/// @param TaskPackTraits  is a class for handling signals and the wait task
+	///                        whenever a task has been completed and when all
+	///                        tasks have been completed, respectively.
+	/// The TaskPackTraits template parameter must provide at least:
+	/// - a constructor taking at least a std::size_t as first parameter,
+	/// - a 'void signalTaskComplete(std::size_t)' method for signaling a task
+	///     at position i has been completed, and
+	/// - a 'void waitComplete()' method for waiting to the end of the tasks.
+	/// NOTE: the size of the task container is always one plus the size
+	/// given as parameter to the constructors and one plus the size given to
+	/// the traits constructor.
 	template < class R, class TaskPackTraits = TaskPackTraitsDefault >
 	class TaskPack : public internal::TaskPackBase, public TaskPackTraits {
-
-		static_assert(std::is_void<decltype(std::declval<TaskPackTraits>().signalTaskComplete(std::declval<std::size_t>()))>::value, "TaskPackTraits template parameter must have a 'void signalTaskComplete(std::size_t)' method.");
-
 	protected:
 		using internal::TaskPackBase::Container;
 
 	public:
+		////////////////////////////////////////////////////////////////////////
+		// CONSTRUCTORS
+		////////////////////////////////////////////////////////////////////////
+
+		/**
+		 *   @brief Constructor with initial size. The default interval is 0.
+		 *   @param size     The size corresponds to the number of packed tasks..
+		 *   @param args     Other possible parameters the traits constructor
+		 *                   may need. (copy)
+		 */
 		template < class ...Args >
 		inline TaskPack(const std::size_t size, const Args &...args);
 
+		/**
+		 *   @brief Constructor with initial size. The default interval is 0.
+		 *   @param size     The size corresponds to the number of packed tasks.
+		 *   @param args     Other possible parameters the traits constructor
+		 *                   may need. (move)
+		 */
 		template < class ...Args >
 		inline TaskPack(const std::size_t size, Args &&...args);
 
+		/**
+		 *   @brief Copy constructor deleted.
+		 */
 		TaskPack(const TaskPack &) = delete;
+
+		/**
+		 *   @brief Move constructor deleted.
+		 */
 		TaskPack(TaskPack &&) = delete;
 
+		////////////////////////////////////////////////////////////////////////
+
+
+
+		////////////////////////////////////////////////////////////////////////
+		// ASSIGNMENT OPERATORS
+		////////////////////////////////////////////////////////////////////////
+
+		/**
+		 *   @brief Copy assignment operator deleted.
+		 */
 		TaskPack & operator=(const TaskPack &) = delete;
+
+		/**
+		 *   @brief Move assignment operator deleted.
+		 */
 		TaskPack & operator=(TaskPack &&) = delete;
 
+		////////////////////////////////////////////////////////////////////////
+
+
+
+		////////////////////////////////////////////////////////////////////////
+		// MAIN METHODS
+		////////////////////////////////////////////////////////////////////////
+
+
+		/**
+		 *   @brief Set a function as a task at position i.
+		 *   @param i        Index to the container where to store the task.
+		 *   @param f        The function to set as task. (copy)
+		 *   @param args     Possible parameters to bind to f. (copy)
+		 */
+		template < class F, class ...Args >
+		inline void setTaskAt(const std::size_t i, const F &f, const Args &...args);
+
+		/**
+		 *   @brief Set a function as a task at position i.
+		 *   @param i        Index to the container where to store the task.
+		 *   @param f        The function to set as task. (move)
+		 *   @param args     Possible parameters to bind to f. (move)
+		 */
 		template < class F, class ...Args >
 		inline void setTaskAt(const std::size_t i, F &&f, Args &&...args);
 
+		/**
+		 *   @brief Set the wait task at position i. It can be called at most
+		 *          once, otherwise a std::logic_error is thrown.
+		 *   @param i        The index of the container where to store the wait
+		 *                   task.
+		 */
 		inline void setWaitTaskAt(const std::size_t i);
 
+
+		/**
+		 *   @brief Get the result of the task at position i.
+		 *   @param i        Index of the task result to access.
+		 *   @return The result of the task at position i.
+		 *   @note It is not thread-safe but it is guaranteed to hold the value
+		 *         when a signal for the corresponding task is emitted.
+		 */
 		inline const R & resultAt(const std::size_t i) const;
+
+		////////////////////////////////////////////////////////////////////////
 
 	private:
 		Container<R>  _results;
@@ -781,26 +854,93 @@ namespace mpmc_tp {
 
 	template < class TaskPackTraits >
 	class TaskPack<void, TaskPackTraits> : public internal::TaskPackBase, public TaskPackTraits {
-
-		static_assert(std::is_void<decltype(std::declval<TaskPackTraits>().signalTaskComplete(std::declval<std::size_t>()))>::value, "The TaskPackTraits template parameter must have a 'void signalTaskComplete(std::size_t)' method.");
-
 	public:
+		////////////////////////////////////////////////////////////////////////
+		// CONSTRUCTORS
+		////////////////////////////////////////////////////////////////////////
+
+		/**
+		 *   @brief Constructor with initial size. The default interval is 0.
+		 *   @param size     The size corresponds to the number of packed tasks.
+		 *   @param args     Other possible parameters the traits constructor
+		 *                   may need. (copy)
+		 */
 		template < class ...Args >
 		inline TaskPack(const std::size_t size, const Args &...args);
 
+		/**
+		 *   @brief Constructor with initial size. The default interval is 0.
+		 *   @param size     The size corresponds to the number of packed tasks.
+		 *   @param args     Other possible parameters the traits constructor
+		 *                   may need. (move)
+		 */
 		template < class ...Args >
 		inline TaskPack(const std::size_t size, Args &&...args);
 
+		/**
+		 *   @brief Copy constructor deleted.
+		 */
 		TaskPack(const TaskPack &) = delete;
+
+		/**
+		 *   @brief Move constructor deleted.
+		 */
 		TaskPack(TaskPack &&) = delete;
 
+		////////////////////////////////////////////////////////////////////////
+
+
+
+		////////////////////////////////////////////////////////////////////////
+		// ASSIGNMENT OPERATORS
+		////////////////////////////////////////////////////////////////////////
+
+		/**
+		 *   @brief Copy assignment operator deleted.
+		 */
 		TaskPack & operator=(const TaskPack &) = delete;
+
+		/**
+		 *   @brief Move assignment operator deleted.
+		 */
 		TaskPack & operator=(TaskPack &&) = delete;
 
+		////////////////////////////////////////////////////////////////////////
+
+
+
+		////////////////////////////////////////////////////////////////////////
+		// MAIN METHODS
+		////////////////////////////////////////////////////////////////////////
+
+		/**
+		 *   @brief Set a function as a task at position i.
+		 *   @param i        Index to the container where to store the task.
+		 *   @param f        The function to set as task. (copy)
+		 *   @param args     Possible parameters to bind to f. (copy)
+		 */
+		template < class F, class ...Args >
+		inline void setTaskAt(const std::size_t i, const F &f, const Args &...args);
+
+		/**
+		 *   @brief Set a function as a task at position i.
+		 *   @param i        Index to the container where to store the task.
+		 *   @param f        The function to set as task. (move)
+		 *   @param args     Possible parameters to bind to f. (move)
+		 */
 		template < class F, class ...Args >
 		inline void setTaskAt(const std::size_t i, F &&f, Args &&...args);
 
+		/**
+		 *   @brief Set the wait task at position i. It can be called at most
+		 *          once, otherwise a std::logic_error is thrown.
+		 *   @param i        The index of the container where to store the wait
+		 *                   task.
+		 */
 		inline void setWaitTaskAt(const std::size_t i);
+
+		////////////////////////////////////////////////////////////////////////
+
 	};
 
 }

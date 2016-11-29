@@ -24,12 +24,15 @@ void count_to(const std::size_t n)
 	sum_to(n);
 }
 
+
+
 int main(int argc, char *argv[])
 {
+	const std::size_t thread_pool_size = std::thread::hardware_concurrency();
 
-	std::cout << "Starting 4 threads...";
+	std::cout << "Starting " << thread_pool_size << " threads...";
 	std::cout.flush();
-	mpmc_tp::MPMCThreadPool<4> threadPool;
+	mpmc_tp::MPMCThreadPool threadPool(thread_pool_size);
 	std::cout << "started!" << std::endl;
 
 	mpmc_tp::ProducerToken producerToken = threadPool.newProducerToken();
