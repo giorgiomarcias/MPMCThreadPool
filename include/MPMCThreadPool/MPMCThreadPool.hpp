@@ -251,7 +251,6 @@ namespace mpmc_tp {
 		// CONSTRUCTORS
 		////////////////////////////////////////////////////////////////////////
 
-
 		/**
 		 *   @brief Constructor with initial size. The default interval is 0.
 		 *   @param size The size corresponds to the number of packed tasks.
@@ -288,6 +287,15 @@ namespace mpmc_tp {
 
 		////////////////////////////////////////////////////////////////////////
 
+
+
+		////////////////////////////////////////////////////////////////////////
+		// DESTRUCTOR
+		////////////////////////////////////////////////////////////////////////
+
+		virtual inline ~TaskPackTraitsLockFree() = default;
+
+		////////////////////////////////////////////////////////////////////////
 
 
 		////////////////////////////////////////////////////////////////////////
@@ -333,7 +341,8 @@ namespace mpmc_tp {
 		 *   @param c        The callback function has form 'void c(std::size_t
 		 *                   i, Args ...args)' where 'i' (mandatory) is the
 		 *                   index of the just completed task, and 'args' are
-		 *                   other eventual parameters to bind to the callback.
+		 *                   possibly other parameters to bind to the callback.
+		 *   @param args     Possible paramenter arguments for the callback.
 		 */
 		template < class C, class ...Args >
 		inline void setCallback(const C &c, const Args &...args);
@@ -343,7 +352,8 @@ namespace mpmc_tp {
 		 *   @param c        The callback function has form 'void c(std::size_t
 		 *                   i, Args ...args)' where 'i' (mandatory) is the
 		 *                   index of the just completed task, and 'args' are
-		 *                   other eventual parameters to bind to the callback.
+		 *                   possibly other parameters to bind to the callback.
+		 *   @param args     Possible paramenter arguments for the callback.
 		 */
 		template < class C, class ...Args >
 		inline void setCallback(C &&c, Args &&...args);
@@ -480,7 +490,14 @@ namespace mpmc_tp {
 		////////////////////////////////////////////////////////////////////////
 
 	protected:
-		std::atomic_bool                 _completed;   ///< Flag indicating whether all the tasks have been completed.
+		/**
+		 *   @brief Wait for the packed tasks to complete. It is lock-free,
+		 *          relying on a loop, so it is better to use this traits for
+		 *          few, short tasks. Call this from the task producer.
+		 */
+		inline void waitComplete() const override;
+
+		mutable std::atomic_bool         _completed;   ///< Flag indicating whether all the tasks have been completed.
 		mutable std::mutex               _waitMutex;   ///< Mutex for blocking the waiting threads.
 		mutable std::condition_variable  _waitCondVar; ///< Condition variable for blocking/waking up waiting threads.
 	};
@@ -571,71 +588,14 @@ namespace mpmc_tp {
 		mutable std::condition_variable  _signalCondVar; ///< Condition variable for blocking/waking up wait method.
 	};
 
+
+
+	using TaskPackTraitsDefault = TaskPackTraitsBlocking;
+
 	////////////////////////////////////////////////////////////////////////////
 
 
 
-
-
-
-	template < class R >
-	class TaskPackTraitsSimple : public TaskPackTraitsBlockingWait {
-	public:
-		inline TaskPackTraitsSimple(const std::size_t size);
-
-		template < class Rep, class Period >
-		inline TaskPackTraitsSimple(const std::size_t size, const std::chrono::duration<Rep, Period> &interval);
-
-		template < class Rep, class Period >
-		inline TaskPackTraitsSimple(const std::size_t size, std::chrono::duration<Rep, Period> &&interval);
-
-		inline TaskPackTraitsSimple(const TaskPackTraitsSimple &) = delete;
-		inline TaskPackTraitsSimple(TaskPackTraitsSimple &&) = delete;
-
-		inline TaskPackTraitsSimple & operator=(const TaskPackTraitsSimple &) = delete;
-		inline TaskPackTraitsSimple & operator=(TaskPackTraitsSimple &&) = delete;
-
-		template < class F, class ...Args >
-		inline void setReduce(F &&f, Args &&...args);
-
-		inline const R & waitCompletionAndReduce();
-
-		inline std::function<R()> createWaitTask();
-
-		inline const R & getResult() const;
-
-	private:
-		std::function<R()>               _reduce;
-		R                                _reducedResult;
-	};
-
-
-
-	template <>
-	class TaskPackTraitsSimple<void> : public TaskPackTraitsBlockingWait {
-	public:
-		inline TaskPackTraitsSimple(const std::size_t size);
-
-		template < class Rep, class Period >
-		inline TaskPackTraitsSimple(const std::size_t size, const std::chrono::duration<Rep, Period> &interval);
-
-		template < class Rep, class Period >
-		inline TaskPackTraitsSimple(const std::size_t size, std::chrono::duration<Rep, Period> &&interval);
-
-		inline TaskPackTraitsSimple(const TaskPackTraitsSimple &) = delete;
-		inline TaskPackTraitsSimple(TaskPackTraitsSimple &&) = delete;
-
-		inline TaskPackTraitsSimple & operator=(const TaskPackTraitsSimple &) = delete;
-		inline TaskPackTraitsSimple & operator=(TaskPackTraitsSimple &&) = delete;
-
-		inline void waitCompletion();
-
-		inline std::function<void()> createWaitTask();
-	};
-
-
-
-	using TaskPackTraitsDefault = TaskPackTraitsSimple<void>;
 
 
 
@@ -693,7 +653,7 @@ namespace mpmc_tp {
 	template < class R, class TaskPackTraits = TaskPackTraitsDefault >
 	class TaskPack : public internal::TaskPackBase, public TaskPackTraits {
 
-		static_assert(std::is_void<decltype(std::declval<TaskPackTraits>().signalTaskComplete(std::declval<std::size_t>()))>::value, "TaskPackTraits template parameter must have a 'void signalTaskComplete(const std::size_t)' member function.");
+		static_assert(std::is_void<decltype(std::declval<TaskPackTraits>().signalTaskComplete(std::declval<std::size_t>()))>::value, "TaskPackTraits template parameter must have a 'void signalTaskComplete(std::size_t)' method.");
 
 	protected:
 		using internal::TaskPackBase::Container;
@@ -714,7 +674,9 @@ namespace mpmc_tp {
 		template < class F, class ...Args >
 		inline void setTaskAt(const std::size_t i, F &&f, Args &&...args);
 
-		const R & resultAt(const std::size_t i) const;
+		inline void setWaitTaskAt(const std::size_t i);
+
+		inline const R & resultAt(const std::size_t i) const;
 
 	private:
 		Container<R>  _results;
@@ -725,7 +687,7 @@ namespace mpmc_tp {
 	template < class TaskPackTraits >
 	class TaskPack<void, TaskPackTraits> : public internal::TaskPackBase, public TaskPackTraits {
 
-		static_assert(std::is_void<decltype(std::declval<TaskPackTraits>().signalTaskComplete(std::declval<std::size_t>()))>::value, "TaskPackTraits template parameter must have a 'void signalTaskComplete(const std::size_t)' member function.");
+		static_assert(std::is_void<decltype(std::declval<TaskPackTraits>().signalTaskComplete(std::declval<std::size_t>()))>::value, "The TaskPackTraits template parameter must have a 'void signalTaskComplete(std::size_t)' method.");
 
 	public:
 		template < class ...Args >
@@ -742,6 +704,8 @@ namespace mpmc_tp {
 
 		template < class F, class ...Args >
 		inline void setTaskAt(const std::size_t i, F &&f, Args &&...args);
+
+		inline void setWaitTaskAt(const std::size_t i);
 	};
 
 }

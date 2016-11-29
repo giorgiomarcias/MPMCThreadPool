@@ -66,16 +66,11 @@ int main(int argc, char *argv[])
 
 
 
-	mpmc_tp::TaskPack<std::size_t, mpmc_tp::TaskPackTraitsSimple<std::size_t>> taskPack0(101, std::chrono::milliseconds(10));
-	for (std::size_t i = 0; i < taskPack0.size()-1; ++i)
+	std::this_thread::sleep_for(std::chrono::seconds(2));
+	std::cout << "LockFree traits:" << std::endl;
+	mpmc_tp::TaskPack<std::size_t, mpmc_tp::TaskPackTraitsLockFree> taskPack0(100, std::chrono::milliseconds(10));
+	for (std::size_t i = 0; i < taskPack0.size(); ++i)
 		taskPack0.setTaskAt(i, sum_to, i * 1000000);
-	taskPack0.setReduce([&taskPack0]()->std::size_t{
-		std::size_t total = 0;
-		for (std::size_t i = 0; i < taskPack0.size(); ++i)
-			total += taskPack0.resultAt(i);
-		return total;
-	});
-	taskPack0.setTaskAt(taskPack0.size()-1, taskPack0.createWaitTask());
 	taskPack0.setCallback([&flag](const std::size_t i){
 		while (flag.test_and_set())
 			;
@@ -83,24 +78,18 @@ int main(int argc, char *argv[])
 		flag.clear();
 	});
 	threadPool.postTasks(producerToken, taskPack0.moveBegin(), taskPack0.moveEnd());
-//	taskPack0.waitAndReduce();
-//	taskPack0.wait();
-	std::size_t result = taskPack0.getResult();
-	std::cout << "Result = " << result << std::endl;
-	std::size_t total = 0;
-	for (std::size_t i = 0; i < taskPack0.size()-1; ++i)
-		total += sum_to(i * 1000000);
-	if (taskPack0.getResult() != total)
-		std::cout << "Error" << std::endl;
-	else
-		std::cout << "Correct" << std::endl;
+	taskPack0.wait();
+	for (std::size_t i = 0; i < taskPack0.size(); ++i)
+		std::cout << "Result at " << i << " : " << taskPack0.resultAt(i) << std::endl;
 
 
 
-	mpmc_tp::TaskPack<void, mpmc_tp::TaskPackTraitsSimple<void>> taskPack1(101, std::chrono::milliseconds(10));
-	for (std::size_t i = 0; i < taskPack1.size()-1; ++i)
-		taskPack1.setTaskAt(i, count_to, i * 1000000);
-	taskPack1.setTaskAt(taskPack1.size()-1, taskPack1.createWaitTask());
+	std::this_thread::sleep_for(std::chrono::seconds(2));
+	std::cout << "Blocking wait traits:" << std::endl;
+	mpmc_tp::TaskPack<std::size_t, mpmc_tp::TaskPackTraitsBlockingWait> taskPack1(101, std::chrono::milliseconds(10));
+	for (std::size_t i = 0; i < taskPack1.size() - 1; ++i)
+		taskPack1.setTaskAt(i, sum_to, i * 1000000);
+	taskPack1.setWaitTaskAt(taskPack1.size() - 1);
 	taskPack1.setCallback([&flag](const std::size_t i){
 		while (flag.test_and_set())
 			;
@@ -109,4 +98,25 @@ int main(int argc, char *argv[])
 	});
 	threadPool.postTasks(producerToken, taskPack1.moveBegin(), taskPack1.moveEnd());
 	taskPack1.wait();
+	for (std::size_t i = 0; i < taskPack1.size() - 1; ++i)
+		std::cout << "Result at " << i << " : " << taskPack1.resultAt(i) << std::endl;
+
+
+
+	std::this_thread::sleep_for(std::chrono::seconds(2));
+	std::cout << "Blocking traits:" << std::endl;
+	mpmc_tp::TaskPack<void, mpmc_tp::TaskPackTraitsBlockingWait> taskPack2(101, std::chrono::milliseconds(10));
+	for (std::size_t i = 0; i < taskPack2.size() - 1; ++i)
+		taskPack2.setTaskAt(i, count_to, i * 1000000);
+	taskPack2.setWaitTaskAt(taskPack2.size() - 1);
+	taskPack2.setCallback([&flag](const std::size_t i){
+		while (flag.test_and_set())
+			;
+		std::cout << "Done task " << i << std::endl;
+		flag.clear();
+	});
+	threadPool.postTasks(producerToken, taskPack2.moveBegin(), taskPack2.moveEnd());
+	taskPack2.wait();
+
+	std::cout << "End" << std::endl;
 }
