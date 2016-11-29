@@ -244,6 +244,7 @@ namespace mpmc_tp {
 	/// calling thread until all tasks have been completed.
 	/// This class is lock-free, using an atomic counter to keep information
 	/// updated on the number of complete tasks.
+	/// This traits are most suitable for a pack with few short tasks.
 	class TaskPackTraitsLockFree {
 	public:
 		////////////////////////////////////////////////////////////////////////
@@ -366,13 +367,20 @@ namespace mpmc_tp {
 		/**
 		 *   @brief Wait for the packed tasks to complete. It is lock-free,
 		 *          relying on a loop, so it is better to use this traits for 
-		 *          not so long/many tasks. Call this from the task producer.
+		 *          few, short tasks. Call this from the task producer.
 		 */
 		virtual inline void wait() const;
 
 		////////////////////////////////////////////////////////////////////////
 
 	protected:
+		/**
+		 *   @brief Wait for the packed tasks to complete. It is lock-free,
+		 *          relying on a loop, so it is better to use this traits for
+		 *          few, short tasks. Call this from the task producer.
+		 */
+		virtual inline void waitComplete() const;
+
 		std::size_t                      _size;            ///< The number of packed tasks.
 		std::atomic_size_t               _nCompletedTasks; ///< The number of completed tasks so far.
 		std::chrono::nanoseconds         _interval;        ///< The time to wait between a check and the next in wait().
@@ -385,13 +393,14 @@ namespace mpmc_tp {
 	/// TaskPack traits, similarly to TaskPackTraitsLockFree.
 	/// This class adds a blocking 'wait' method.
 	/// This class is mostly lock-free, using an atomic counter to keep
-	/// information updated on the number of complete tasks, like.
-	/// TaskPackTraitsBase. The only blocking part is, of course, the 'wait'
+	/// information updated on the number of complete tasks, like
+	/// TaskPackTraitsLockFree. The only blocking part is, of course, the 'wait'
 	/// method. It relies on a mutex and a condition variable, as well as an
 	/// atomic bool. Deriving classes, whose users want to block themselves
 	/// calling 'wait', should atomically set (in 'release' order) the
 	/// '_completed' bool variable and notify blocked threads with the
-	/// '_condVar' condition variable.
+	/// '_waitCondVar' condition variable.
+	/// This traits are most suitable for a pack with many short tasks.
 	class TaskPackTraitsBlockingWait : public TaskPackTraitsLockFree {
 	public:
 		////////////////////////////////////////////////////////////////////////
@@ -454,19 +463,112 @@ namespace mpmc_tp {
 
 
 
+		////////////////////////////////////////////////////////////////////////
+		// MAIN METHODS
+		////////////////////////////////////////////////////////////////////////
+
 		/**
 		 *   @brief Wait for the packed tasks to complete. It is blocking,
 		 *          relying on a mutex and a condition variable. Derived classes
 		 *          should provide a way to wake up waiting threads by setting
 		 *          '_completed' to true and notifying all waiting threads with
-		 *          '_condVar'. Call this from the task producer.
+		 *          '_waitCondVar'. It is better for a pack with many short
+		 *          tasks. Call this from the task producer.
 		 */
 		inline void wait() const override;
 
+		////////////////////////////////////////////////////////////////////////
+
 	protected:
-		std::atomic_bool                 _completed; ///< Flag indicating whether all the tasks have been completed.
-		mutable std::mutex               _mutex;     ///< Mutex for blocking the waiting threads.
-		mutable std::condition_variable  _condVar;   ///< Condition variable for blocking/waking up waiting threads.
+		std::atomic_bool                 _completed;   ///< Flag indicating whether all the tasks have been completed.
+		mutable std::mutex               _waitMutex;   ///< Mutex for blocking the waiting threads.
+		mutable std::condition_variable  _waitCondVar; ///< Condition variable for blocking/waking up waiting threads.
+	};
+
+
+
+	/// The TaskPackTraitsBlocking class is a base class for any TaskPack
+	/// traits, similarly to TaskPackTraitsLockFree.
+	/// This class adds a blocking 'signalCompletedTask' and 'wait' methods.
+	/// This class uses an atomic counter to keep information updated on the
+	/// number of complete tasks, like TaskPackTraitsLockFree.
+	/// The only blocking part is, of course, the 'wait' and the
+	/// 'signalCompleteTask' methods. They rely on mutexes and condition
+	/// variables, as well as atomic booleans. Deriving classes, whose users
+	/// want to block themselves calling 'wait', should atomically set (in
+	///  'release' order) the '_completed' bool variable and notify blocked
+	/// threads with the '_waitCondVar' condition variable. There is not need of
+	/// any interval here, since the 'wait' method blocks until a new task has
+	/// been completed (and notified).
+	/// This traits are most suitable for a pack with many short tasks.
+	class TaskPackTraitsBlocking : public TaskPackTraitsBlockingWait {
+	public:
+		////////////////////////////////////////////////////////////////////////
+		// CONSTRUCTORS
+		////////////////////////////////////////////////////////////////////////
+
+		/**
+		 *   @brief Constructor with initial size. The default interval is 0.
+		 *   @param size     The size corresponds to the number of packed tasks..
+		 */
+		inline TaskPackTraitsBlocking(const std::size_t size);
+
+		/**
+		 *   @brief Copy constructor deleted.
+		 */
+		inline TaskPackTraitsBlocking(const TaskPackTraitsBlocking &) = delete;
+
+		/**
+		 *   @brief Move constructor deleted.
+		 */
+		inline TaskPackTraitsBlocking(TaskPackTraitsBlocking &&) = delete;
+
+		////////////////////////////////////////////////////////////////////////
+
+
+
+		////////////////////////////////////////////////////////////////////////
+		// ASSIGNMENT OPERATORS
+		////////////////////////////////////////////////////////////////////////
+
+		/**
+		 *   @brief Copy assignment operator deleted.
+		 */
+		inline TaskPackTraitsBlocking & operator=(const TaskPackTraitsBlocking &) = delete;
+
+		/**
+		 *   @brief Move assignment operator deleted.
+		 */
+		inline TaskPackTraitsBlocking & operator=(TaskPackTraitsBlocking &&) = delete;
+
+		////////////////////////////////////////////////////////////////////////
+
+
+
+		////////////////////////////////////////////////////////////////////////
+		// MAIN METHODS
+		////////////////////////////////////////////////////////////////////////
+
+		/**
+		 *   @brief The signal indicating the i-th task has been completed.
+		 *          Mandatory.
+		 *   @param i        The index of the task just completed.
+		 *   @note If a callback has bee provided, it gets called here.
+		 */
+		inline void signalTaskComplete(const std::size_t i) override;
+
+		////////////////////////////////////////////////////////////////////////
+
+	protected:
+		/**
+		 *   @brief Wait for the packed tasks to complete. It is lock-free,
+		 *          relying on a loop, so it is better to use this traits for
+		 *          few, short tasks. Call this from the task producer.
+		 */
+		inline void waitComplete() const override;
+
+		mutable std::mutex               _signalMutex;   ///< Mutex for blocking the wait method.
+		mutable std::condition_variable  _signalCondVar; ///< Condition variable for blocking/waking up wait method.
 	};
 
 	////////////////////////////////////////////////////////////////////////////

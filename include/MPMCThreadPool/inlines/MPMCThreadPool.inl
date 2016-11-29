@@ -176,8 +176,14 @@ namespace mpmc_tp {
 
 	inline void TaskPackTraitsLockFree::wait() const
 	{
+		waitComplete();
+	}
+
+	inline void TaskPackTraitsLockFree::waitComplete() const
+	{
 		while (_nCompletedTasks.load(std::memory_order::memory_order_relaxed) < _size)
-			;
+			if (_interval.count() > 0)
+				std::this_thread::sleep_for(_interval);
 	}
 
 	////////////////////////////////////////////////////////////////////////
@@ -185,7 +191,7 @@ namespace mpmc_tp {
 
 
 	////////////////////////////////////////////////////////////////////////
-	// TaskPackTraitsBlockWait METHODS
+	// TaskPackTraitsBlockingWait METHODS
 	////////////////////////////////////////////////////////////////////////
 
 	inline TaskPackTraitsBlockingWait::TaskPackTraitsBlockingWait(const std::size_t size) : TaskPackTraitsLockFree(size), _completed(false)
@@ -201,8 +207,32 @@ namespace mpmc_tp {
 
 	inline void TaskPackTraitsBlockingWait::wait() const
 	{
-		std::unique_lock<std::mutex> lock(_mutex);
-		_condVar.wait(lock, [this]()->bool{ return _completed.load(std::memory_order::memory_order_acquire); });
+		std::unique_lock<std::mutex> lock(_waitMutex);
+		_waitCondVar.wait(lock, [this]()->bool{ return _completed.load(std::memory_order::memory_order_acquire); });
+	}
+
+	////////////////////////////////////////////////////////////////////////////
+
+
+
+	////////////////////////////////////////////////////////////////////////
+	// TaskPackTraitsBlocking METHODS
+	////////////////////////////////////////////////////////////////////////
+
+	inline TaskPackTraitsBlocking::TaskPackTraitsBlocking(const std::size_t size) : TaskPackTraitsBlockingWait(size)
+	{ }
+
+	inline void TaskPackTraitsBlocking::signalTaskComplete(const std::size_t i)
+	{
+		TaskPackTraitsBlockingWait::signalTaskComplete(i);
+		_signalCondVar.notify_all();
+	}
+
+	inline void TaskPackTraitsBlocking::waitComplete() const
+	{
+		std::unique_lock<std::mutex> lock(_signalMutex);
+		while (_nCompletedTasks.load(std::memory_order::memory_order_relaxed) < _size)
+			_signalCondVar.wait(lock, [this]()->bool{ return _nCompletedTasks.load(std::memory_order::memory_order_relaxed) >= _size; });
 	}
 
 	////////////////////////////////////////////////////////////////////////////
@@ -234,15 +264,13 @@ namespace mpmc_tp {
 	template < class R >
 	inline const R & TaskPackTraitsSimple<R>::waitCompletionAndReduce()
 	{
-		while (_nCompletedTasks.load(std::memory_order::memory_order_relaxed) < _size)
-			if (_interval.count() > 0)
-				std::this_thread::sleep_for(_interval);
+		this->waitComplete();
 		if (_reduce)
 			_reducedResult = _reduce();
 		else
 			_reducedResult = R();
 		_completed.store(true, std::memory_order::memory_order_release);
-		_condVar.notify_all();
+		_waitCondVar.notify_all();
 		return _reducedResult;
 	}
 
@@ -277,11 +305,9 @@ namespace mpmc_tp {
 
 	inline void TaskPackTraitsSimple<void>::waitCompletion()
 	{
-		while (_nCompletedTasks.load(std::memory_order::memory_order_relaxed) < _size)
-			if (_interval.count() > 0)
-				std::this_thread::sleep_for(_interval);
+		this->waitComplete();
 		_completed.store(true, std::memory_order::memory_order_release);
-		_condVar.notify_all();
+		_waitCondVar.notify_all();
 	}
 
 	inline std::function<void()> TaskPackTraitsSimple<void>::createWaitTask()
