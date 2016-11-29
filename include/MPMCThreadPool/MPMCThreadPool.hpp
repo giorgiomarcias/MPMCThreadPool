@@ -10,7 +10,6 @@
 
 #include <concurrentqueue/concurrentqueue.h>
 #include <vector>
-#include <future>
 
 namespace mpmc_tp {
 
@@ -46,11 +45,13 @@ namespace mpmc_tp {
 	/// For slightly better performance, each producer (i.e. a user that posts
 	/// tasks and runs in a given thread) can get and specify a token allowing
 	/// faster enqueuing.
+	/// @param SIZE  Template parameter setting the fixed number of threads.
 	template < std::size_t SIZE >
 	class MPMCThreadPool {
-	public:
 
 		static_assert(SIZE > 0UL, "Invalid thread pool size: it must own at least one thread.");
+
+	public:
 
 		////////////////////////////////////////////////////////////////////////
 		// DEFINITIONS
@@ -70,7 +71,6 @@ namespace mpmc_tp {
 		 *    @brief Default constructor. It instantiates and invokes threads.
 		 */
 		inline MPMCThreadPool();
-
 
 		/**
 		 *    @brief Copy constructor. MPMCThreadPools can't be copied.
@@ -121,7 +121,6 @@ namespace mpmc_tp {
 		// ACCESS METHODS
 		////////////////////////////////////////////////////////////////////////
 
-
 		/**
 		 *    @brief Returns the size (as defined at compile time) of the pool.
 		 */
@@ -134,7 +133,6 @@ namespace mpmc_tp {
 		////////////////////////////////////////////////////////////////////////
 		// METHODS FOR TASKS
 		////////////////////////////////////////////////////////////////////////
-
 
 		/**
 		 *   @brief Obtain a new producer token for posting tasks faster.
@@ -193,19 +191,12 @@ namespace mpmc_tp {
 		////////////////////////////////////////////////////////////////////////
 
 
+
 	private:
-		////////////////////////////////////////////////////////////////////////
-		// PRIVATE DEFINITIONS
-		////////////////////////////////////////////////////////////////////////
-
-		////////////////////////////////////////////////////////////////////////
-
-
 
 		////////////////////////////////////////////////////////////////////////
 		// PRIVATE METHODS
 		////////////////////////////////////////////////////////////////////////
-
 
 		/**
 		 *   @brief This specifies the job of the threads: they wait for tasks
@@ -216,6 +207,7 @@ namespace mpmc_tp {
 		inline void threadJob();
 
 		////////////////////////////////////////////////////////////////////////
+
 
 
 		////////////////////////////////////////////////////////////////////////
@@ -236,6 +228,318 @@ namespace mpmc_tp {
 	};
 
 
+
+
+
+
+	////////////////////////////////////////////////////////////////////////////
+	// TRAITS
+	////////////////////////////////////////////////////////////////////////////
+
+	/// The TaskPackTraitsLockFree class is a base class for any TaskPack traits
+	/// providing mandatory as well as recommended methods. The only
+	/// mandatory method is 'signalTaskComplete' which is called whenever a
+	/// task has been completed. It is possible to set a callback compound
+	/// to this. Furthermore, a 'wait' method can be used to block the
+	/// calling thread until all tasks have been completed.
+	/// This class is lock-free, using an atomic counter to keep information
+	/// updated on the number of complete tasks.
+	class TaskPackTraitsLockFree {
+	public:
+		////////////////////////////////////////////////////////////////////////
+		// CONSTRUCTORS
+		////////////////////////////////////////////////////////////////////////
+
+
+		/**
+		 *   @brief Constructor with initial size. The default interval is 0.
+		 *   @param size The size corresponds to the number of packed tasks.
+		 */
+		inline TaskPackTraitsLockFree(const std::size_t size);
+
+		/**
+		 *   @brief Constructor with initial size and check interval.
+		 *   @param size     The size corresponds to the number of packed tasks.
+		 *   @param interval The amount of time to wait between a check and the
+		 *                   next one while wating for completion (copied).
+		 */
+		template < class Rep, class Period >
+		inline TaskPackTraitsLockFree(const std::size_t size, const std::chrono::duration<Rep, Period> &interval);
+
+		/**
+		 *   @brief Constructor with initial size and check interval.
+		 *   @param size     The size corresponds to the number of packed tasks.
+		 *   @param interval The amount of time to wait between a check and the
+		 *                   next one while wating for completion (moved).
+		 */
+		template < class Rep, class Period >
+		inline TaskPackTraitsLockFree(const std::size_t size, std::chrono::duration<Rep, Period> &&interval);
+
+		/**
+		 *   @brief Copy constructor deleted.
+		 */
+		inline TaskPackTraitsLockFree(const TaskPackTraitsLockFree &) = delete;
+
+		/**
+		 *   @brief Move constructor deleted.
+		 */
+		inline TaskPackTraitsLockFree(TaskPackTraitsLockFree &&) = delete;
+
+		////////////////////////////////////////////////////////////////////////
+
+
+
+		////////////////////////////////////////////////////////////////////////
+		// ASSIGNMENT OPERATORS
+		////////////////////////////////////////////////////////////////////////
+
+		/**
+		 *   @brief Copy assignment operator deleted.
+		 */
+		inline TaskPackTraitsLockFree & operator=(const TaskPackTraitsLockFree &) = delete;
+
+		/**
+		 *   @brief Move assignment operator deleted.
+		 */
+		inline TaskPackTraitsLockFree & operator=(TaskPackTraitsLockFree &&) = delete;
+
+		////////////////////////////////////////////////////////////////////////
+
+
+
+		////////////////////////////////////////////////////////////////////////
+		// MAIN METHODS
+		////////////////////////////////////////////////////////////////////////
+
+		/**
+		 *   @brief Set the interval between a check for completion and next one.
+		 *   @param interval The amount of time to wait between a check and the
+		 *                   next one while wating for completion (copied).
+		 */
+		template < class Rep, class Period >
+		inline void setInterval(const std::chrono::duration<Rep, Period> &interval);
+
+		/**
+		 *   @brief Set the interval between a check for completion and next one.
+		 *   @param interval The amount of time to wait between a check and the
+		 *                   next one while wating for completion (moved).
+		 */
+		template < class Rep, class Period >
+		inline void setInterval(std::chrono::duration<Rep, Period> &&interval);
+
+		/**
+		 *   @brief Set function to call at every task complete signal. (copy)
+		 *   @param c        The callback function has form 'void c(std::size_t
+		 *                   i, Args ...args)' where 'i' (mandatory) is the
+		 *                   index of the just completed task, and 'args' are
+		 *                   other eventual parameters to bind to the callback.
+		 */
+		template < class C, class ...Args >
+		inline void setCallback(const C &c, const Args &...args);
+
+		/**
+		 *   @brief Set function to call at every task complete signal. (move)
+		 *   @param c        The callback function has form 'void c(std::size_t
+		 *                   i, Args ...args)' where 'i' (mandatory) is the
+		 *                   index of the just completed task, and 'args' are
+		 *                   other eventual parameters to bind to the callback.
+		 */
+		template < class C, class ...Args >
+		inline void setCallback(C &&c, Args &&...args);
+
+
+		/**
+		 *   @brief The signal indicating the i-th task has been completed.
+		 *          Mandatory.
+		 *   @param i        The index of the task just completed.
+		 *   @note If a callback has bee provided, it gets called here.
+		 */
+		virtual inline void signalTaskComplete(const std::size_t i);
+
+
+		/**
+		 *   @brief Return the number of completed tasks so far.
+		 */
+		virtual inline std::size_t nCompletedTasks() const;
+
+
+		/**
+		 *   @brief Wait for the packed tasks to complete. It is lock-free,
+		 *          relying on a loop, so it is better to use this traits for 
+		 *          not so long/many tasks. Call this from the task producer.
+		 */
+		virtual inline void wait() const;
+
+		////////////////////////////////////////////////////////////////////////
+
+	protected:
+		std::size_t                      _size;            ///< The number of packed tasks.
+		std::atomic_size_t               _nCompletedTasks; ///< The number of completed tasks so far.
+		std::chrono::nanoseconds         _interval;        ///< The time to wait between a check and the next in wait().
+		std::function<void(std::size_t)> _callback;        ///< Optional callback to call inside signalTaskComplete().
+	};
+
+
+
+	/// The TaskPackTraitsBlockingWait class is a base class for any
+	/// TaskPack traits, similarly to TaskPackTraitsLockFree.
+	/// This class adds a blocking 'wait' method.
+	/// This class is mostly lock-free, using an atomic counter to keep
+	/// information updated on the number of complete tasks, like.
+	/// TaskPackTraitsBase. The only blocking part is, of course, the 'wait'
+	/// method. It relies on a mutex and a condition variable, as well as an
+	/// atomic bool. Deriving classes, whose users want to block themselves
+	/// calling 'wait', should atomically set (in 'release' order) the
+	/// '_completed' bool variable and notify blocked threads with the
+	/// '_condVar' condition variable.
+	class TaskPackTraitsBlockingWait : public TaskPackTraitsLockFree {
+	public:
+		////////////////////////////////////////////////////////////////////////
+		// CONSTRUCTORS
+		////////////////////////////////////////////////////////////////////////
+
+		/**
+		 *   @brief Constructor with initial size. The default interval is 0.
+		 *   @param size     The size corresponds to the number of packed tasks..
+		 */
+		inline TaskPackTraitsBlockingWait(const std::size_t size);
+
+		/**
+		 *   @brief Constructor with initial size and check interval.
+		 *   @param size     The size corresponds to the number of packed tasks.
+		 *   @param interval The amount of time to wait between a check and the
+		 *                   next one while wating for completion (copied).
+		 */
+		template < class Rep, class Period >
+		inline TaskPackTraitsBlockingWait(const std::size_t size, const std::chrono::duration<Rep, Period> &interval);
+
+		/**
+		 *   @brief Constructor with initial size and check interval.
+		 *   @param size     The size corresponds to the number of packed tasks.
+		 *   @param interval The amount of time to wait between a check and the
+		 *                   next one while wating for completion (moved).
+		 */
+		template < class Rep, class Period >
+		inline TaskPackTraitsBlockingWait(const std::size_t size, std::chrono::duration<Rep, Period> &&interval);
+
+		/**
+		 *   @brief Copy constructor deleted.
+		 */
+		inline TaskPackTraitsBlockingWait(const TaskPackTraitsBlockingWait &) = delete;
+
+		/**
+		 *   @brief Move constructor deleted.
+		 */
+		inline TaskPackTraitsBlockingWait(TaskPackTraitsBlockingWait &&) = delete;
+
+		////////////////////////////////////////////////////////////////////////
+
+
+
+		////////////////////////////////////////////////////////////////////////
+		// ASSIGNMENT OPERATORS
+		////////////////////////////////////////////////////////////////////////
+
+		/**
+		 *   @brief Copy assignment operator deleted.
+		 */
+		inline TaskPackTraitsBlockingWait & operator=(const TaskPackTraitsBlockingWait &) = delete;
+
+		/**
+		 *   @brief Move assignment operator deleted.
+		 */
+		inline TaskPackTraitsBlockingWait & operator=(TaskPackTraitsBlockingWait &&) = delete;
+
+		////////////////////////////////////////////////////////////////////////
+
+
+
+		/**
+		 *   @brief Wait for the packed tasks to complete. It is blocking,
+		 *          relying on a mutex and a condition variable. Derived classes
+		 *          should provide a way to wake up waiting threads by setting
+		 *          '_completed' to true and notifying all waiting threads with
+		 *          '_condVar'. Call this from the task producer.
+		 */
+		inline void wait() const override;
+
+	protected:
+		std::atomic_bool                 _completed; ///< Flag indicating whether all the tasks have been completed.
+		mutable std::mutex               _mutex;     ///< Mutex for blocking the waiting threads.
+		mutable std::condition_variable  _condVar;   ///< Condition variable for blocking/waking up waiting threads.
+	};
+
+	////////////////////////////////////////////////////////////////////////////
+
+
+
+
+
+
+	template < class R >
+	class TaskPackTraitsSimple : public TaskPackTraitsBlockingWait {
+	public:
+		inline TaskPackTraitsSimple(const std::size_t size);
+
+		template < class Rep, class Period >
+		inline TaskPackTraitsSimple(const std::size_t size, const std::chrono::duration<Rep, Period> &interval);
+
+		template < class Rep, class Period >
+		inline TaskPackTraitsSimple(const std::size_t size, std::chrono::duration<Rep, Period> &&interval);
+
+		inline TaskPackTraitsSimple(const TaskPackTraitsSimple &) = delete;
+		inline TaskPackTraitsSimple(TaskPackTraitsSimple &&) = delete;
+
+		inline TaskPackTraitsSimple & operator=(const TaskPackTraitsSimple &) = delete;
+		inline TaskPackTraitsSimple & operator=(TaskPackTraitsSimple &&) = delete;
+
+		template < class F, class ...Args >
+		inline void setReduce(F &&f, Args &&...args);
+
+		inline const R & waitCompletionAndReduce();
+
+		inline std::function<R()> createWaitTask();
+
+		inline const R & getResult() const;
+
+	private:
+		std::function<R()>               _reduce;
+		R                                _reducedResult;
+	};
+
+
+
+	template <>
+	class TaskPackTraitsSimple<void> : public TaskPackTraitsBlockingWait {
+	public:
+		inline TaskPackTraitsSimple(const std::size_t size);
+
+		template < class Rep, class Period >
+		inline TaskPackTraitsSimple(const std::size_t size, const std::chrono::duration<Rep, Period> &interval);
+
+		template < class Rep, class Period >
+		inline TaskPackTraitsSimple(const std::size_t size, std::chrono::duration<Rep, Period> &&interval);
+
+		inline TaskPackTraitsSimple(const TaskPackTraitsSimple &) = delete;
+		inline TaskPackTraitsSimple(TaskPackTraitsSimple &&) = delete;
+
+		inline TaskPackTraitsSimple & operator=(const TaskPackTraitsSimple &) = delete;
+		inline TaskPackTraitsSimple & operator=(TaskPackTraitsSimple &&) = delete;
+
+		inline void waitCompletion();
+
+		inline std::function<void()> createWaitTask();
+	};
+
+
+
+	using TaskPackTraitsDefault = TaskPackTraitsSimple<void>;
+
+
+
+	////////////////////////////////////////////////////////////////////////////
+	// INTERNAL STUFF
+	////////////////////////////////////////////////////////////////////////////
 
 	namespace internal {
 
@@ -278,110 +582,9 @@ namespace mpmc_tp {
 			SimpleTaskContainer  _tasks;
 		};
 
-		class TaskPackTraitsBase {
-		public:
-			inline TaskPackTraitsBase(const std::size_t size);
-
-			template < class Rep, class Period >
-			inline TaskPackTraitsBase(const std::size_t size, const std::chrono::duration<Rep, Period> &interval);
-
-			template < class Rep, class Period >
-			inline TaskPackTraitsBase(const std::size_t size, std::chrono::duration<Rep, Period> &&interval);
-
-			inline TaskPackTraitsBase(const TaskPackTraitsBase &) = delete;
-			inline TaskPackTraitsBase(TaskPackTraitsBase &&) = delete;
-
-			inline TaskPackTraitsBase & operator=(const TaskPackTraitsBase &) = delete;
-			inline TaskPackTraitsBase & operator=(TaskPackTraitsBase &&) = delete;
-
-			template < class Rep, class Period >
-			inline void setInterval(const std::chrono::duration<Rep, Period> &interval);
-
-			template < class C, class ...Args >
-			inline void setCallback(const C &c, const Args &...args);
-
-			template < class C, class ...Args >
-			inline void setCallback(C &&c, Args &&...args);
-
-			inline void signalTaskComplete(const std::size_t i);
-
-			inline std::size_t nCompletedTasks() const;
-
-			inline void wait() const;
-
-		protected:
-			std::size_t                      _size;
-			std::atomic_size_t               _nCompletedTasks;
-			std::chrono::nanoseconds         _interval;
-			std::function<void(std::size_t)> _callback;
-			std::atomic_bool                 _completed;
-			mutable std::mutex               _mutex;
-			mutable std::condition_variable  _condVar;
-		};
-
 	}
 
-
-
-
-	template < class R >
-	class TaskPackTraitsSimple : public internal::TaskPackTraitsBase {
-	public:
-		inline TaskPackTraitsSimple(const std::size_t size);
-
-		template < class Rep, class Period >
-		inline TaskPackTraitsSimple(const std::size_t size, const std::chrono::duration<Rep, Period> &interval);
-
-		template < class Rep, class Period >
-		inline TaskPackTraitsSimple(const std::size_t size, std::chrono::duration<Rep, Period> &&interval);
-
-		inline TaskPackTraitsSimple(const TaskPackTraitsSimple &) = delete;
-		inline TaskPackTraitsSimple(TaskPackTraitsSimple &&) = delete;
-
-		inline TaskPackTraitsSimple & operator=(const TaskPackTraitsSimple &) = delete;
-		inline TaskPackTraitsSimple & operator=(TaskPackTraitsSimple &&) = delete;
-
-		template < class F, class ...Args >
-		inline void setReduce(F &&f, Args &&...args);
-
-		inline const R & waitCompletionAndReduce();
-
-		inline std::function<R()> createWaitTask();
-
-		inline const R & getResult() const;
-
-	private:
-		std::function<R()>               _reduce;
-		R                                _reducedResult;
-	};
-
-
-
-	template <>
-	class TaskPackTraitsSimple<void> : public internal::TaskPackTraitsBase {
-	public:
-		inline TaskPackTraitsSimple(const std::size_t size);
-
-		template < class Rep, class Period >
-		inline TaskPackTraitsSimple(const std::size_t size, const std::chrono::duration<Rep, Period> &interval);
-
-		template < class Rep, class Period >
-		inline TaskPackTraitsSimple(const std::size_t size, std::chrono::duration<Rep, Period> &&interval);
-
-		inline TaskPackTraitsSimple(const TaskPackTraitsSimple &) = delete;
-		inline TaskPackTraitsSimple(TaskPackTraitsSimple &&) = delete;
-
-		inline TaskPackTraitsSimple & operator=(const TaskPackTraitsSimple &) = delete;
-		inline TaskPackTraitsSimple & operator=(TaskPackTraitsSimple &&) = delete;
-
-		inline void waitCompletion();
-
-		inline std::function<void()> createWaitTask();
-	};
-
-
-
-	using TaskPackTraitsDefault = TaskPackTraitsSimple<void>;
+	////////////////////////////////////////////////////////////////////////////
 
 
 
