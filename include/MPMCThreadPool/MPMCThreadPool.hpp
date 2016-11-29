@@ -419,7 +419,7 @@ namespace mpmc_tp {
 
 		/**
 		 *   @brief Constructor with initial size. The default interval is 0.
-		 *   @param size     The size corresponds to the number of packed tasks..
+		 *   @param size     The size corresponds to the number of packed tasks.
 		 */
 		inline TaskPackTraitsBlockingWait(const std::size_t size);
 
@@ -590,6 +590,7 @@ namespace mpmc_tp {
 
 
 
+	/// Default traits.
 	using TaskPackTraitsDefault = TaskPackTraitsBlocking;
 
 	////////////////////////////////////////////////////////////////////////////
@@ -605,6 +606,10 @@ namespace mpmc_tp {
 
 	namespace internal {
 
+		/// The TaskPackBase class exposes the common methods for a TaskPack
+		/// object. It owns a container of SimpleTaskType tasks and gives some
+		/// begin/end methods to access them: use these to bulk enqueue the pack
+		/// into the thread pool.
 		class TaskPackBase {
 		protected:
 			template < class T >
@@ -616,32 +621,122 @@ namespace mpmc_tp {
 			using const_iterator = SimpleTaskContainer::const_iterator;
 			using move_iterator  = std::move_iterator<iterator>;
 
+
+			////////////////////////////////////////////////////////////////////
+			// CONSTRUCTORS
+			////////////////////////////////////////////////////////////////////
+
+			/**
+			 *   @brief Constructor with initial size.
+			 *   @param size     The size corresponds to the number of packed
+			 *                   tasks.
+			 */
 			inline TaskPackBase(const std::size_t size);
 
+			/**
+			 *   @brief Copy constructor deleted.
+			 */
 			TaskPackBase(const TaskPackBase &) = delete;
+
+			/**
+			 *   @brief Move constructor deleted.
+			 */
 			TaskPackBase(TaskPackBase &&) = delete;
 
+			////////////////////////////////////////////////////////////////////
+
+
+
+			////////////////////////////////////////////////////////////////////
+			// ASSIGNMENT OPERATORS
+			////////////////////////////////////////////////////////////////////
+
+			/**
+			 *   @brief Copy assignment operator deleted.
+			 */
 			TaskPackBase & operator=(const TaskPackBase &) = delete;
+
+			/**
+			 *   @brief Move assignment operator deleted.
+			 */
 			TaskPackBase & operator=(TaskPackBase &&) = delete;
 
+			////////////////////////////////////////////////////////////////////
+
+
+
+			////////////////////////////////////////////////////////////////////
+			// MAIN METHODS
+			////////////////////////////////////////////////////////////////////
+
+			/**
+			 *    @brief Returns the size of the task pack.
+			 */
 			inline std::size_t size() const;
 
+			/**
+			 *    @brief Returns an iterator to the beginning.
+			 */
 			inline iterator begin();
+
+			/**
+			 *    @brief Returns a constant iterator to the beginning.
+			 */
 			inline const_iterator begin() const;
+
+			/**
+			 *    @brief Returns a move iterator to the beginning.
+			 */
 			inline move_iterator moveBegin();
 
+			/**
+			 *    @brief Returns an iterator to the end.
+			 */
 			inline iterator end();
+
+			/**
+			 *    @brief Returns a constant iterator to the end.
+			 */
 			inline const_iterator end() const;
+
+			/**
+			 *    @brief Returns a move iterator to the end.
+			 */
 			inline move_iterator moveEnd();
 
+
+			/**
+			 *   @brief Give const access to the i-th task.
+			 *   @param i    The index of the task to return.
+			 *   @return The i-th task.
+			 */
 			inline const SimpleTaskType & at(const std::size_t i) const;
+
+			/**
+			 *   @brief Give access to the i-th task.
+			 *   @param i    The index of the task to return.
+			 *   @return The i-th task.
+			 */
 			inline SimpleTaskType & at(const std::size_t i);
 
+			/**
+			 *   @brief Give const access to the i-th task.
+			 *   @param i    The index of the task to return.
+			 *   @return The i-th task.
+			 */
 			inline const SimpleTaskType & operator[](const std::size_t i) const;
+
+			/**
+			 *   @brief Give access to the i-th task.
+			 *   @param i    The index of the task to return.
+			 *   @return The i-th task.
+			 */
 			inline SimpleTaskType & operator[](const std::size_t i);
 
+			////////////////////////////////////////////////////////////////////
+
 		protected:
-			SimpleTaskContainer  _tasks;
+			SimpleTaskContainer  _tasks;  ///< Container of SimpleTaskType tasks.
 		};
 
 	}
