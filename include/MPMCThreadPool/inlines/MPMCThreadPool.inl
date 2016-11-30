@@ -14,24 +14,78 @@ namespace mpmc_tp {
 	// MPMCThreadPool METHODS
 	////////////////////////////////////////////////////////////////////////////
 
-	inline MPMCThreadPool::MPMCThreadPool(const std::size_t size) : _threads(size), _active(true)
+	inline std::size_t MPMCThreadPool::DEFAULT_SIZE()
 	{
+		return std::thread::hardware_concurrency();
+	}
+
+	inline MPMCThreadPool::MPMCThreadPool() : _threads(MPMCThreadPool::DEFAULT_SIZE()), _actives(MPMCThreadPool::DEFAULT_SIZE()), _active(true)
+	{
+		_flag.clear();
+		for (std::size_t i = 0; i < _actives.size(); ++i)
+			_actives.at(i).store(true, std::memory_order::memory_order_relaxed);
 		for (std::size_t i = 0; i < _threads.size(); ++i)
-			_threads[i] = std::thread(&MPMCThreadPool::threadJob, this);
+			_threads.at(i) = std::thread(&MPMCThreadPool::threadJob, this, std::ref(_actives.at(i)));
+	}
+
+	inline MPMCThreadPool::MPMCThreadPool(const std::size_t size) : _threads(size), _actives(size), _active(true)
+	{
+		_flag.clear();
+		for (std::size_t i = 0; i < _actives.size(); ++i)
+			_actives.at(i).store(true, std::memory_order::memory_order_relaxed);
+		for (std::size_t i = 0; i < _threads.size(); ++i)
+			_threads.at(i) = std::thread(&MPMCThreadPool::threadJob, this, std::ref(_actives.at(i)));
 	}
 
 	inline MPMCThreadPool::~MPMCThreadPool()
 	{
+		while (_flag.test_and_set())
+			;
 		_active.store(false, std::memory_order::memory_order_relaxed);
 		_condVar.notify_all();
 		for (std::size_t i = 0; i < _threads.size(); ++i)
-			if (_threads[i].joinable())
-				_threads[i].join();
+			if (_threads.at(i).joinable())
+				_threads.at(i).join();
+		_flag.clear();
 	}
 
 	inline std::size_t MPMCThreadPool::size() const
 	{
-		return _threads.size();
+		while (_flag.test_and_set())
+			;
+		std::size_t size = _threads.size();
+		_flag.clear();
+		return size;
+	}
+
+	inline void MPMCThreadPool::expand(const std::size_t n)
+	{
+		while (_flag.test_and_set())
+			;
+		std::size_t oldSize = _threads.size();
+		_threads.resize(oldSize + n);
+		_actives.resize(oldSize + n);
+		for (std::size_t i = 0; i < n; ++i)
+			_actives.at(oldSize + i).store(true, std::memory_order::memory_order_relaxed);
+		for (std::size_t i = 0; i < n; ++i)
+			_threads.at(oldSize + i) = std::thread(&MPMCThreadPool::threadJob, this, std::ref(_actives.at(oldSize + i)));
+		_flag.clear();
+	}
+
+	inline void MPMCThreadPool::shrink(const std::size_t n)
+	{
+		while (_flag.test_and_set())
+			;
+		std::size_t newSize = _threads.size() - std::min(_threads.size(), n);
+		for (std::size_t i = newSize; i < _actives.size(); ++i)
+			_actives.at(i).store(false, std::memory_order::memory_order_relaxed);
+		_condVar.notify_all();
+		for (std::size_t i = newSize; i < _threads.size(); ++i)
+			if (_threads.at(i).joinable())
+				_threads.at(i).join();
+		_threads.resize(newSize);
+		_actives.resize(newSize);
+		_flag.clear();
 	}
 
 	inline ProducerToken MPMCThreadPool::newProducerToken()
@@ -89,17 +143,17 @@ namespace mpmc_tp {
 			_condVar.notify_one();
 	}
 
-	inline void MPMCThreadPool::threadJob()
+	inline void MPMCThreadPool::threadJob(std::atomic_bool &active)
 	{
 		SimpleTaskType task;
-		while (_active.load(std::memory_order::memory_order_relaxed)) {
+		while (_active.load(std::memory_order::memory_order_relaxed) && active.load(std::memory_order::memory_order_relaxed)) {
 			if (_taskQueue.try_dequeue(task)) {
 				if (task)
 					task();
 			} else {
 				std::unique_lock<std::mutex> lock(_mutex);
-				_condVar.wait(lock, [this]()->bool{
-					return !_active.load(std::memory_order::memory_order_relaxed) || _taskQueue.size_approx() > 0;
+				_condVar.wait(lock, [this, &active]()->bool{
+					return !_active.load(std::memory_order::memory_order_relaxed) || !active.load(std::memory_order::memory_order_relaxed) || _taskQueue.size_approx() > 0;
 				});
 			}
 		}

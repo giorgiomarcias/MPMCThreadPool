@@ -9,6 +9,7 @@
 #define MPMCThreadPool_hpp
 
 #include <concurrentqueue/concurrentqueue.h>
+#include <deque>
 #include <vector>
 
 namespace mpmc_tp {
@@ -48,21 +49,43 @@ namespace mpmc_tp {
 	public:
 
 		////////////////////////////////////////////////////////////////////////
+		// STATIC METHODS
+		////////////////////////////////////////////////////////////////////////
+
+		/**
+		 *   @brief Return the static default size of the pool, given by
+		 *          std::thread::hardware_concurrency();
+		 */
+		static inline std::size_t DEFAULT_SIZE();
+
+		////////////////////////////////////////////////////////////////////////
+
+
+
+		////////////////////////////////////////////////////////////////////////
 		// CONSTRUCTORS
 		////////////////////////////////////////////////////////////////////////
 
 		/**
-		 *    @brief Default constructor. It instantiates and invokes threads.
+		 *   @brief Default constructor. It instantiates and invokes
+		 *          DEFAULT_SIZE() threads.
 		 */
-		inline MPMCThreadPool(const std::size_t size);
+		inline MPMCThreadPool();
 
 		/**
-		 *    @brief Copy constructor. MPMCThreadPools can't be copied.
+		 *   @brief Default constructor. It instantiates and invokes size
+		 *          threads.
+		 *   @param size      The initial number of threads.
+		 */
+		explicit inline MPMCThreadPool(const std::size_t size);
+
+		/**
+		 *   @brief Copy constructor. MPMCThreadPools can't be copied.
 		 */
 		MPMCThreadPool(const MPMCThreadPool &other) = delete;
 
 		/**
-		 *    @brief Move constructor. MPMCThreadPools can't be moved.
+		 *   @brief Move constructor. MPMCThreadPools can't be moved.
 		 */
 		MPMCThreadPool(MPMCThreadPool &&other) = default;
 
@@ -75,7 +98,7 @@ namespace mpmc_tp {
 		////////////////////////////////////////////////////////////////////////
 
 		/**
-		 *    @brief Default destructor. It stops and delete threads.
+		 *   @brief Default destructor. It stops and delete threads.
 		 */
 		inline ~MPMCThreadPool();
 
@@ -88,12 +111,12 @@ namespace mpmc_tp {
 		////////////////////////////////////////////////////////////////////////
 
 		/**
-		 *    @brief Copy assignment operator. MPMCThreadPools can't be copied.
+		 *   @brief Copy assignment operator. MPMCThreadPools can't be copied.
 		 */
 		MPMCThreadPool & operator=(const MPMCThreadPool &other) = delete;
 
 		/**
-		 *    @brief Move assignment operator. MPMCThreadPools can't be moved.
+		 *   @brief Move assignment operator. MPMCThreadPools can't be moved.
 		 */
 		MPMCThreadPool & operator=(MPMCThreadPool &&other) = default;
 
@@ -102,13 +125,25 @@ namespace mpmc_tp {
 
 
 		////////////////////////////////////////////////////////////////////////
-		// ACCESS METHODS
+		// SIZE-RELATED METHODS
 		////////////////////////////////////////////////////////////////////////
 
 		/**
-		 *    @brief Returns the size of the pool.
+		 *   @brief Returns the size of the pool.
 		 */
 		inline std::size_t size() const;
+
+		/**
+		 *   @brief Increase the size of the pool with n new threads.
+		 *   @param n         The number of new threads to add.
+		 */
+		inline void expand(const std::size_t n);
+
+		/**
+		 *   @brief Decrease the size of the pool by removing n threads.
+		 *   @param n         The number of new threads to remove.
+		 */
+		inline void shrink(const std::size_t n);
 
 		////////////////////////////////////////////////////////////////////////
 
@@ -126,13 +161,13 @@ namespace mpmc_tp {
 
 		/**
 		 *   @brief Post a single task by copying it into the queue.
-		 *   @param task         The task to copy into the queue.
+		 *   @param task      The task to copy into the queue.
 		 */
 		inline void postTask(const SimpleTaskType &task);
 
 		/**
 		 *   @brief Post a single task by moving it into the queue.
-		 *   @param task         The task to move into the queue.
+		 *   @param task      The task to move into the queue.
 		 */
 		inline void postTask(SimpleTaskType &&task);
 
@@ -188,7 +223,7 @@ namespace mpmc_tp {
 		 *          loop in this wait-dequeue-perform until the thread pool is
 		 *          destructed.
 		 */
-		inline void threadJob();
+		inline void threadJob(std::atomic_bool &active);
 
 		////////////////////////////////////////////////////////////////////////
 
@@ -198,13 +233,12 @@ namespace mpmc_tp {
 		// PRIVATE MEMBERS
 		////////////////////////////////////////////////////////////////////////
 
-		std::vector<std::thread>         _threads;  ///< Array of thread objects.
-
+		mutable std::atomic_flag         _flag;     ///< Atomic flag for lock-free mutual exclusion.
+		std::deque<std::thread>          _threads;  ///< Array of thread objects.
+		std::deque<std::atomic_bool>     _actives;  ///< Signals for stopping the threads.
 		ConcurrentQueue<SimpleTaskType>  _taskQueue;///< Queue of tasks.
-
 		std::atomic_bool                 _active;   ///< Signal for stopping the threads.
-
-		std::mutex                       _mutex;    ///< Mutex for allowing thread suspension when the queue is empty.
+		std::mutex                       _mutex;    ///< Mutex for blocking the threads when the queue is empty.
 		std::condition_variable          _condVar;  ///< Condition variable for thread wakeup when the queue is no more empty.
 
 		////////////////////////////////////////////////////////////////////////
@@ -504,6 +538,7 @@ namespace mpmc_tp {
 	/// This traits are most suitable for a pack with many short tasks.
 	class TaskPackTraitsBlocking : public TaskPackTraitsBlockingWait {
 	public:
+
 		////////////////////////////////////////////////////////////////////////
 		// CONSTRUCTORS
 		////////////////////////////////////////////////////////////////////////
@@ -636,12 +671,12 @@ namespace mpmc_tp {
 			////////////////////////////////////////////////////////////////////
 
 			/**
-			 *   @brief Copy assignment operator deleted.
+			 *    @brief Copy assignment operator deleted.
 			 */
 			TaskPackBase & operator=(const TaskPackBase &) = delete;
 
 			/**
-			 *   @brief Move assignment operator deleted.
+			 *    @brief Move assignment operator deleted.
 			 */
 			TaskPackBase & operator=(TaskPackBase &&) = delete;
 
@@ -757,7 +792,7 @@ namespace mpmc_tp {
 		 *   @brief Constructor with initial size. The default interval is 0.
 		 *   @param size     The size corresponds to the number of packed tasks..
 		 *   @param args     Other possible parameters the traits constructor
-		 *                   may need. (copy)
+		 *                    may need. (copy)
 		 */
 		template < class ...Args >
 		inline TaskPack(const std::size_t size, const Args &...args);
@@ -847,7 +882,7 @@ namespace mpmc_tp {
 		////////////////////////////////////////////////////////////////////////
 
 	private:
-		Container<R>  _results;
+		Container<R>  _results;  ///< Container to store the result of the tasks.
 	};
 
 
