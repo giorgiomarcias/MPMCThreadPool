@@ -1,3 +1,12 @@
+# Copyright (c) 2016 Giorgio Marcias
+#
+# This software is subject to the simplified BSD license.
+#
+# Author: Giorgio Marcias
+# email: marcias.giorgio@gmail.com
+
+
+
 function(set_MPMCThreadPool_source_files_properties)
     get_target_property(files MPMCThreadPool INTERFACE_SOURCES)
     foreach(file IN LISTS files)

@@ -1,3 +1,12 @@
+# Copyright (c) 2016 Giorgio Marcias
+#
+# This software is subject to the simplified BSD license.
+#
+# Author: Giorgio Marcias
+# email: marcias.giorgio@gmail.com
+
+
+
 cmake_minimum_required(VERSION 3.3)
 
 project(MPMCThreadPool)

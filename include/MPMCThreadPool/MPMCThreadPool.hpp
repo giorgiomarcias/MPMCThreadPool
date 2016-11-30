@@ -1,6 +1,6 @@
 // Copyright (c) 2016 Giorgio Marcias
 //
-// This source code is
+// This source code is subject to the simplified BSD license.
 //
 // Author: Giorgio Marcias
 // email: marcias.giorgio@gmail.com
@@ -98,7 +98,8 @@ namespace mpmc_tp {
 		////////////////////////////////////////////////////////////////////////
 
 		/**
-		 *   @brief Default destructor. It stops and delete threads.
+		 *   @brief Default destructor. It stops and deletes the active threads.
+		 *          Any pending tasks are not processed but deleted.
 		 */
 		inline ~MPMCThreadPool();
 
@@ -134,14 +135,20 @@ namespace mpmc_tp {
 		inline std::size_t size() const;
 
 		/**
-		 *   @brief Increase the size of the pool with n new threads.
+		 *   @brief Increase the size of the pool with n new threads. The new
+		 *          threads are activated and start soon to process tasks.
 		 *   @param n         The number of new threads to add.
 		 */
 		inline void expand(const std::size_t n);
 
 		/**
-		 *   @brief Decrease the size of the pool by removing n threads.
+		 *   @brief Decrease the size of the pool by removing n threads. It
+		 *          actually stops n threads (after they complete the tasks they
+		 *          are working on).
 		 *   @param n         The number of new threads to remove.
+		 *   @note If the shrink leads to 0 threads and the queue is not empty
+		 *         the remaining tasks are not processed until new threads are
+		 *         are added by calling 'expand(n)' with n > 0.
 		 */
 		inline void shrink(const std::size_t n);
 
@@ -160,44 +167,44 @@ namespace mpmc_tp {
 
 
 		/**
-		 *   @brief Post a single task by copying it into the queue.
+		 *   @brief Submit a single task by copying it into the queue.
 		 *   @param task      The task to copy into the queue.
 		 */
-		inline void postTask(const SimpleTaskType &task);
+		inline void submitTask(const SimpleTaskType &task);
 
 		/**
-		 *   @brief Post a single task by moving it into the queue.
+		 *   @brief Submit a single task by moving it into the queue.
 		 *   @param task      The task to move into the queue.
 		 */
-		inline void postTask(SimpleTaskType &&task);
+		inline void submitTask(SimpleTaskType &&task);
 
 		/**
-		 *   @brief Post a single task by copying it into the queue, specifying
+		 *   @brief Submit a single task by copying it into the queue, specifying
 		 *          the producer token. This results in faster enqueuing.
 		 *   @param token     The producer token for faster enqueuing.
 		 *   @param task      The task to copy into the queue.
 		 */
-		inline void postTask(const ProducerToken &token, const SimpleTaskType &task);
+		inline void submitTask(const ProducerToken &token, const SimpleTaskType &task);
 
 		/**
-		 *   @brief Post a single task by moving it into the queue, specifying
+		 *   @brief Submit a single task by moving it into the queue, specifying
 		 *          the producer token. This results in faster enqueuing.
 		 *   @param token     The producer token for faster enqueuing.
 		 *   @param task      The task to move into the queue.
 		 */
-		inline void postTask(const ProducerToken &token, SimpleTaskType &&task);
+		inline void submitTask(const ProducerToken &token, SimpleTaskType &&task);
 
 		/**
-		 *   @brief Post a bulk of tasks. Pass a std::move_iterator for moving
+		 *   @brief Submit a bulk of tasks. Pass a std::move_iterator for moving
 		 *          tasks into the queue.
 		 *   @param first     The iterator to the first task to enqueue.
 		 *   @param task      The iterator to the last task (except) to enqueue.
 		 */
 		template < class It >
-		inline void postTasks(It first, It last);
+		inline void submitTasks(It first, It last);
 
 		/**
-		 *   @brief Post a bulk of tasks, specifying the producer token. This
+		 *   @brief Submit a bulk of tasks, specifying the producer token. This
 		 *          results in faster enqueuing. Pass a std::move_iterator for
 		 *          moving tasks into the queue.
 		 *   @param token     The producer token for faster enqueuing.
@@ -205,7 +212,7 @@ namespace mpmc_tp {
 		 *   @param task      The iterator to the last task (except) to enqueue.
 		 */
 		template < class It >
-		inline void postTasks(const ProducerToken &token, It first, It last);
+		inline void submitTasks(const ProducerToken &token, It first, It last);
 
 		////////////////////////////////////////////////////////////////////////
 

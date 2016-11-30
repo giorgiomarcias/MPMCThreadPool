@@ -1,6 +1,6 @@
 // Copyright (c) 2016 Giorgio Marcias
 //
-// This source code is
+// This source code is subject to the simplified BSD license.
 //
 // Author: Giorgio Marcias
 // email: marcias.giorgio@gmail.com
@@ -93,32 +93,32 @@ namespace mpmc_tp {
 		return ProducerToken(_taskQueue);
 	}
 
-	inline void MPMCThreadPool::postTask(const SimpleTaskType &task)
+	inline void MPMCThreadPool::submitTask(const SimpleTaskType &task)
 	{
 		_taskQueue.enqueue(task);
 		_condVar.notify_one();
 	}
 
-	inline void MPMCThreadPool::postTask(SimpleTaskType &&task)
+	inline void MPMCThreadPool::submitTask(SimpleTaskType &&task)
 	{
 		_taskQueue.enqueue(std::forward<SimpleTaskType>(task));
 		_condVar.notify_one();
 	}
 
-	inline void MPMCThreadPool::postTask(const ProducerToken &token, const SimpleTaskType &task)
+	inline void MPMCThreadPool::submitTask(const ProducerToken &token, const SimpleTaskType &task)
 	{
 		_taskQueue.enqueue(token, task);
 		_condVar.notify_one();
 	}
 
-	inline void MPMCThreadPool::postTask(const ProducerToken &token, SimpleTaskType &&task)
+	inline void MPMCThreadPool::submitTask(const ProducerToken &token, SimpleTaskType &&task)
 	{
 		_taskQueue.enqueue(token, std::forward<SimpleTaskType>(task));
 		_condVar.notify_one();
 	}
 
 	template < class It >
-	inline void MPMCThreadPool::postTasks(It first, It last)
+	inline void MPMCThreadPool::submitTasks(It first, It last)
 	{
 		std::size_t n = std::distance(first, last);
 		if (n == 0)
@@ -131,7 +131,7 @@ namespace mpmc_tp {
 	}
 
 	template < class It >
-	inline void MPMCThreadPool::postTasks(const ProducerToken &token, It first, It last)
+	inline void MPMCThreadPool::submitTasks(const ProducerToken &token, It first, It last)
 	{
 		std::size_t n = std::distance(first, last);
 		if (n == 0)

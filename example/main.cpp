@@ -1,6 +1,6 @@
 // Copyright (c) 2016 Giorgio Marcias
 //
-// This source code is
+// This source code is subject to the simplified BSD license.
 //
 // Author: Giorgio Marcias
 // email: marcias.giorgio@gmail.com
@@ -28,24 +28,29 @@ void count_to(const std::size_t n)
 
 int main(int argc, char *argv[])
 {
-	const std::size_t thread_pool_size = std::thread::hardware_concurrency();
-
-	std::cout << "Starting " << thread_pool_size << " threads...";
+	std::cout << "Starting " << mpmc_tp::MPMCThreadPool::DEFAULT_SIZE() << " threads...";
 	std::cout.flush();
-	mpmc_tp::MPMCThreadPool threadPool(thread_pool_size);
+	mpmc_tp::MPMCThreadPool threadPool;
 	std::cout << "started!" << std::endl;
 
 	mpmc_tp::ProducerToken producerToken = threadPool.newProducerToken();
 
 	std::atomic_flag flag = ATOMIC_FLAG_INIT;
 	for (std::size_t i = 0; i < 10; ++i)
-		threadPool.postTask(producerToken, [&flag, i](){
+		threadPool.submitTask(producerToken, [&flag, i](){
 			while (flag.test_and_set())
 				;
 			std::cout << "Done task " << i << std::endl;
 			flag.clear();
 		});
 
+	while (flag.test_and_set())
+		;
+	std::cout << "Adding 2 threads...";
+	std::cout.flush();
+	threadPool.expand(2);
+	std::cout << "total size: " << threadPool.size() << std::endl;
+	flag.clear();
 
 	while (flag.test_and_set())
 		;
@@ -54,7 +59,7 @@ int main(int argc, char *argv[])
 	std::this_thread::sleep_for(std::chrono::seconds(10));
 
 	for (std::size_t i = 10; i < 20; ++i)
-		threadPool.postTask(producerToken, [&flag, i](){
+		threadPool.submitTask(producerToken, [&flag, i](){
 			while (flag.test_and_set())
 				;
 			std::cout << "Done task " << i << std::endl;
@@ -80,7 +85,7 @@ int main(int argc, char *argv[])
 		std::cout << "Done task " << i << std::endl;
 		flag.clear();
 	});
-	threadPool.postTasks(producerToken, taskPack0.moveBegin(), taskPack0.moveEnd());
+	threadPool.submitTasks(producerToken, taskPack0.moveBegin(), taskPack0.moveEnd());
 	taskPack0.wait();
 	for (std::size_t i = 0; i < taskPack0.size(); ++i)
 		std::cout << "Result at " << i << " : " << taskPack0.resultAt(i) << std::endl;
@@ -99,7 +104,7 @@ int main(int argc, char *argv[])
 		std::cout << "Done task " << i << std::endl;
 		flag.clear();
 	});
-	threadPool.postTasks(producerToken, taskPack1.moveBegin(), taskPack1.moveEnd());
+	threadPool.submitTasks(producerToken, taskPack1.moveBegin(), taskPack1.moveEnd());
 	taskPack1.wait();
 	for (std::size_t i = 0; i < taskPack1.size() - 1; ++i)
 		std::cout << "Result at " << i << " : " << taskPack1.resultAt(i) << std::endl;
@@ -118,7 +123,16 @@ int main(int argc, char *argv[])
 		std::cout << "Done task " << i << std::endl;
 		flag.clear();
 	});
-	threadPool.postTasks(producerToken, taskPack2.moveBegin(), taskPack2.moveEnd());
+	threadPool.submitTasks(producerToken, taskPack2.moveBegin(), taskPack2.moveEnd());
+
+	while (flag.test_and_set())
+		;
+	std::cout << "Removing 2 threads...";
+	std::cout.flush();
+	threadPool.shrink(2);
+	std::cout << "total size: " << threadPool.size() << std::endl;
+	flag.clear();
+
 	taskPack2.wait();
 
 	std::cout << "End" << std::endl;
