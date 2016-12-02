@@ -60,6 +60,6 @@ The interface is fully documented, just take a look at it in the code for more i
 
 
 
- ## License
+## License
 
 The code is subject to the simplified BSD license.
