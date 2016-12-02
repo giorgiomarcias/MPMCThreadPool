@@ -185,6 +185,11 @@ namespace mpmc_tp {
 	inline TaskPackTraitsLockFree::TaskPackTraitsLockFree(const std::size_t size, std::chrono::duration<Rep, Period> &&interval) : _size(size), _nCompletedTasks(0), _interval(std::forward<std::chrono::duration<Rep, Period>>(interval))
 	{ }
 
+	inline void TaskPackTraitsLockFree::setTraitsSize(const std::size_t size)
+	{
+		_size = size;
+	}
+
 	template < class Rep, class Period >
 	inline void TaskPackTraitsLockFree::setInterval(const std::chrono::duration<Rep, Period> &interval)
 	{
@@ -269,9 +274,9 @@ namespace mpmc_tp {
 
 
 
-	////////////////////////////////////////////////////////////////////////
+	////////////////////////////////////////////////////////////////////////////
 	// TaskPackTraitsBlocking METHODS
-	////////////////////////////////////////////////////////////////////////
+	////////////////////////////////////////////////////////////////////////////
 
 	inline TaskPackTraitsBlocking::TaskPackTraitsBlocking(const std::size_t size) : TaskPackTraitsBlockingWait(size)
 	{ }
@@ -359,11 +364,7 @@ namespace mpmc_tp {
 	////////////////////////////////////////////////////////////////////////////
 
 	template < class R, class TaskPackTraits > template < class ...Args >
-	inline TaskPack<R, TaskPackTraits>::TaskPack(const std::size_t size, const Args &...args) : internal::TaskPackBase(size + 1), TaskPackTraits(size, args...), _results(size + 1, R())
-	{ }
-
-	template < class R, class TaskPackTraits > template < class ...Args >
-	inline TaskPack<R, TaskPackTraits>::TaskPack(const std::size_t size, Args &&...args) : internal::TaskPackBase(size + 1), TaskPackTraits(size, std::forward<Args>(args)...), _results(size + 1, R())
+	inline TaskPack<R, TaskPackTraits>::TaskPack(const std::size_t size, Args &&...args) : internal::TaskPackBase(size), TaskPackTraits(size, std::forward<Args>(args)...), _results(size, R()), _waitTaskIndex(std::numeric_limits<std::size_t>::max())
 	{ }
 
 	template < class R, class TaskPackTraits > template < class F, class ...Args >
@@ -394,9 +395,14 @@ namespace mpmc_tp {
 	inline void TaskPack<R, TaskPackTraits>::setWaitTaskAt(const std::size_t i)
 	{
 		static_assert(std::is_void<decltype(std::declval<TaskPack<R, TaskPackTraits>>().waitComplete())>::value, "The TaskPackTraits template parameter must have a 'void waitComplete()' method.");
+		static_assert(std::is_void<decltype(std::declval<TaskPack<void, TaskPackTraits>>().setTraitsSize(std::declval<std::size_t>()))>::value, "TaskPackTraits template parameter must have a 'void setTraitsSize(std::size_t)' method.");
+		if (_waitTaskIndex < _tasks.size())
+			throw std::logic_error("The wait task can not be set more than once.");
 		if (_tasks.at(i))
-			throw std::logic_error("Can not set a wait task in a non-empty bin.");
+			throw std::logic_error("The wait task can not be set into a non-empty bin.");
 		_tasks.at(i) = std::bind(&TaskPack<R, TaskPackTraits>::waitComplete, this);
+		this->setTraitsSize(_tasks.size() - 1);
+		_waitTaskIndex = i;
 	}
 
 	template < class R, class TaskPackTraits >
@@ -408,11 +414,7 @@ namespace mpmc_tp {
 
 
 	template < class TaskPackTraits > template < class ...Args >
-	inline TaskPack<void, TaskPackTraits>::TaskPack(const std::size_t size, const Args &...args) : internal::TaskPackBase(size + 1), TaskPackTraits(size, args...)
-	{ }
-
-	template < class TaskPackTraits > template < class ...Args >
-	inline TaskPack<void, TaskPackTraits>::TaskPack(const std::size_t size, Args &&...args) : internal::TaskPackBase(size + 1), TaskPackTraits(size, std::forward<Args>(args)...)
+	inline TaskPack<void, TaskPackTraits>::TaskPack(const std::size_t size, Args &&...args) : internal::TaskPackBase(size), TaskPackTraits(size, std::forward<Args>(args)...), _waitTaskIndex(std::numeric_limits<std::size_t>::max())
 	{ }
 
 	template < class TaskPackTraits > template < class F, class ...Args >
@@ -431,9 +433,14 @@ namespace mpmc_tp {
 	inline void TaskPack<void, TaskPackTraits>::setWaitTaskAt(const std::size_t i)
 	{
 		static_assert(std::is_void<decltype(std::declval<TaskPack<void, TaskPackTraits>>().waitComplete())>::value, "The TaskPackTraits template parameter must have a 'void waitComplete()' method.");
+		static_assert(std::is_void<decltype(std::declval<TaskPack<void, TaskPackTraits>>().setTraitsSize(std::declval<std::size_t>()))>::value, "TaskPackTraits template parameter must have a 'void setTraitsSize(std::size_t)' method.");
+		if (_waitTaskIndex < _tasks.size())
+			throw std::logic_error("The wait task can not be set more than once.");
 		if (_tasks.at(i))
-			throw std::logic_error("Can not set a wait task in a non-empty bin.");
+			throw std::logic_error("The wait task can not be set into a non-empty bin.");
 		_tasks.at(i) = std::bind(&TaskPack<void, TaskPackTraits>::waitComplete, this);
+		this->setTraitsSize(_tasks.size() - 1);
+		_waitTaskIndex = i;
 	}
 
 	////////////////////////////////////////////////////////////////////////////

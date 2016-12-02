@@ -346,6 +346,12 @@ namespace mpmc_tp {
 		////////////////////////////////////////////////////////////////////////
 
 		/**
+		 *   @brief Set the size.
+		 *   @param size The size corresponds to the number of packed tasks.
+		 */
+		inline void setTraitsSize(const std::size_t size);
+
+		/**
 		 *   @brief Set the interval between a check for completion and next one.
 		 *   @param interval The amount of time to wait between a check and the
 		 *                   next one while wating for completion (copied).
@@ -796,19 +802,10 @@ namespace mpmc_tp {
 		////////////////////////////////////////////////////////////////////////
 
 		/**
-		 *   @brief Constructor with initial size. The default interval is 0.
-		 *   @param size     The size corresponds to the number of packed tasks..
-		 *   @param args     Other possible parameters the traits constructor
-		 *                    may need. (copy)
-		 */
-		template < class ...Args >
-		inline TaskPack(const std::size_t size, const Args &...args);
-
-		/**
-		 *   @brief Constructor with initial size. The default interval is 0.
+		 *   @brief Constructor with initial size and the TaskPackTraits.
 		 *   @param size     The size corresponds to the number of packed tasks.
 		 *   @param args     Other possible parameters the traits constructor
-		 *                   may need. (move)
+		 *                   may need.
 		 */
 		template < class ...Args >
 		inline TaskPack(const std::size_t size, Args &&...args);
@@ -816,12 +813,12 @@ namespace mpmc_tp {
 		/**
 		 *   @brief Copy constructor deleted.
 		 */
-		TaskPack(const TaskPack &) = delete;
+		inline TaskPack(const TaskPack &) = delete;
 
 		/**
 		 *   @brief Move constructor deleted.
 		 */
-		TaskPack(TaskPack &&) = delete;
+		inline TaskPack(TaskPack &&) = delete;
 
 		////////////////////////////////////////////////////////////////////////
 
@@ -889,7 +886,8 @@ namespace mpmc_tp {
 		////////////////////////////////////////////////////////////////////////
 
 	private:
-		Container<R>  _results;  ///< Container to store the result of the tasks.
+		Container<R>  _results;       ///< Container to store the result of the tasks.
+		std::size_t   _waitTaskIndex; ///< Index of the wait task.
 	};
 
 
@@ -902,19 +900,10 @@ namespace mpmc_tp {
 		////////////////////////////////////////////////////////////////////////
 
 		/**
-		 *   @brief Constructor with initial size. The default interval is 0.
+		 *   @brief Constructor with initial size and the TaskPackTraits.
 		 *   @param size     The size corresponds to the number of packed tasks.
 		 *   @param args     Other possible parameters the traits constructor
-		 *                   may need. (copy)
-		 */
-		template < class ...Args >
-		inline TaskPack(const std::size_t size, const Args &...args);
-
-		/**
-		 *   @brief Constructor with initial size. The default interval is 0.
-		 *   @param size     The size corresponds to the number of packed tasks.
-		 *   @param args     Other possible parameters the traits constructor
-		 *                   may need. (move)
+		 *                   may need.
 		 */
 		template < class ...Args >
 		inline TaskPack(const std::size_t size, Args &&...args);
@@ -922,12 +911,12 @@ namespace mpmc_tp {
 		/**
 		 *   @brief Copy constructor deleted.
 		 */
-		TaskPack(const TaskPack &) = delete;
+		inline TaskPack(const TaskPack &) = delete;
 
 		/**
 		 *   @brief Move constructor deleted.
 		 */
-		TaskPack(TaskPack &&) = delete;
+		inline TaskPack(TaskPack &&) = delete;
 
 		////////////////////////////////////////////////////////////////////////
 
@@ -982,6 +971,9 @@ namespace mpmc_tp {
 		inline void setWaitTaskAt(const std::size_t i);
 
 		////////////////////////////////////////////////////////////////////////
+
+	private:
+		std::size_t   _waitTaskIndex; ///< Index of the wait task.
 
 	};
 
