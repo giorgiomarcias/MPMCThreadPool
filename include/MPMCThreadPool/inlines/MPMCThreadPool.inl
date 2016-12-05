@@ -203,12 +203,6 @@ namespace mpmc_tp {
 	}
 
 	template < class C, class ...Args >
-	inline void TaskPackTraitsLockFree::setCallback(const C &c, const Args &...args)
-	{
-		_callback = std::bind(c, std::placeholders::_1, args...);
-	}
-
-	template < class C, class ...Args >
 	inline void TaskPackTraitsLockFree::setCallback(C &&c, Args &&...args)
 	{
 		_callback = std::bind(std::forward<C>(c), std::placeholders::_1, std::forward<Args>(args)...);
@@ -366,18 +360,6 @@ namespace mpmc_tp {
 	template < class R, class TaskPackTraits > template < class ...Args >
 	inline TaskPack<R, TaskPackTraits>::TaskPack(const std::size_t size, Args &&...args) : internal::TaskPackBase(size), TaskPackTraits(size, std::forward<Args>(args)...), _results(size, R()), _waitTaskIndex(std::numeric_limits<std::size_t>::max())
 	{ }
-
-	template < class R, class TaskPackTraits > template < class F, class ...Args >
-	inline void TaskPack<R, TaskPackTraits>::setTaskAt(const std::size_t i, const F &f, const Args &...args)
-	{
-		static_assert(std::is_convertible<typename std::result_of<F(Args...)>::type, R>::value, "Result type of callable object must be same of TaskPack template parameter.");
-		static_assert(std::is_void<decltype(std::declval<TaskPack<R, TaskPackTraits>>().signalTaskComplete(std::declval<std::size_t>()))>::value, "TaskPackTraits template parameter must have a 'void signalTaskComplete(std::size_t)' method.");
-		auto g = std::bind(f, args...);
-		_tasks.at(i) = [i, g, this](){
-			_results.at(i) = g();
-			this->signalTaskComplete(i);
-		};
-	}
 
 	template < class R, class TaskPackTraits > template < class F, class ...Args >
 	inline void TaskPack<R, TaskPackTraits>::setTaskAt(const std::size_t i, F &&f, Args &&...args)

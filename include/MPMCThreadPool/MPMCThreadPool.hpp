@@ -368,17 +368,6 @@ namespace mpmc_tp {
 		inline void setInterval(std::chrono::duration<Rep, Period> &&interval);
 
 		/**
-		 *   @brief Set function to call at every task complete signal. (copy)
-		 *   @param c        The callback function has form 'void c(std::size_t
-		 *                   i, Args ...args)' where 'i' (mandatory) is the
-		 *                   index of the just completed task, and 'args' are
-		 *                   possibly other parameters to bind to the callback.
-		 *   @param args     Possible paramenter arguments for the callback.
-		 */
-		template < class C, class ...Args >
-		inline void setCallback(const C &c, const Args &...args);
-
-		/**
 		 *   @brief Set function to call at every task complete signal. (move)
 		 *   @param c        The callback function has form 'void c(std::size_t
 		 *                   i, Args ...args)' where 'i' (mandatory) is the
@@ -846,16 +835,6 @@ namespace mpmc_tp {
 		// MAIN METHODS
 		////////////////////////////////////////////////////////////////////////
 
-
-		/**
-		 *   @brief Set a function as a task at position i.
-		 *   @param i        Index to the container where to store the task.
-		 *   @param f        The function to set as task. (copy)
-		 *   @param args     Possible parameters to bind to f. (copy)
-		 */
-		template < class F, class ...Args >
-		inline void setTaskAt(const std::size_t i, const F &f, const Args &...args);
-
 		/**
 		 *   @brief Set a function as a task at position i.
 		 *   @param i        Index to the container where to store the task.
@@ -943,15 +922,6 @@ namespace mpmc_tp {
 		////////////////////////////////////////////////////////////////////////
 		// MAIN METHODS
 		////////////////////////////////////////////////////////////////////////
-
-		/**
-		 *   @brief Set a function as a task at position i.
-		 *   @param i        Index to the container where to store the task.
-		 *   @param f        The function to set as task. (copy)
-		 *   @param args     Possible parameters to bind to f. (copy)
-		 */
-		template < class F, class ...Args >
-		inline void setTaskAt(const std::size_t i, const F &f, const Args &...args);
 
 		/**
 		 *   @brief Set a function as a task at position i.
