@@ -23,7 +23,7 @@ namespace mpmc_tp {
 	{
 		_flag.clear();
 		for (std::size_t i = 0; i < _actives.size(); ++i)
-			_actives.at(i).store(true, std::memory_order::memory_order_relaxed);
+			_actives.at(i).store(true, std::memory_order::memory_order_release);
 		for (std::size_t i = 0; i < _threads.size(); ++i)
 			_threads.at(i) = std::thread(&MPMCThreadPool::threadJob, this, std::ref(_actives.at(i)));
 	}
@@ -32,7 +32,7 @@ namespace mpmc_tp {
 	{
 		_flag.clear();
 		for (std::size_t i = 0; i < _actives.size(); ++i)
-			_actives.at(i).store(true, std::memory_order::memory_order_relaxed);
+			_actives.at(i).store(true, std::memory_order::memory_order_release);
 		for (std::size_t i = 0; i < _threads.size(); ++i)
 			_threads.at(i) = std::thread(&MPMCThreadPool::threadJob, this, std::ref(_actives.at(i)));
 	}
@@ -41,7 +41,7 @@ namespace mpmc_tp {
 	{
 		while (_flag.test_and_set())
 			;
-		_active.store(false, std::memory_order::memory_order_relaxed);
+		_active.store(false, std::memory_order::memory_order_release);
 		_condVar.notify_all();
 		for (std::size_t i = 0; i < _threads.size(); ++i)
 			if (_threads.at(i).joinable())
@@ -66,7 +66,7 @@ namespace mpmc_tp {
 		_threads.resize(oldSize + n);
 		_actives.resize(oldSize + n);
 		for (std::size_t i = 0; i < n; ++i)
-			_actives.at(oldSize + i).store(true, std::memory_order::memory_order_relaxed);
+			_actives.at(oldSize + i).store(true, std::memory_order::memory_order_release);
 		for (std::size_t i = 0; i < n; ++i)
 			_threads.at(oldSize + i) = std::thread(&MPMCThreadPool::threadJob, this, std::ref(_actives.at(oldSize + i)));
 		_flag.clear();
@@ -78,7 +78,7 @@ namespace mpmc_tp {
 			;
 		std::size_t newSize = _threads.size() - std::min(_threads.size(), n);
 		for (std::size_t i = newSize; i < _actives.size(); ++i)
-			_actives.at(i).store(false, std::memory_order::memory_order_relaxed);
+			_actives.at(i).store(false, std::memory_order::memory_order_release);
 		_condVar.notify_all();
 		for (std::size_t i = newSize; i < _threads.size(); ++i)
 			if (_threads.at(i).joinable())
@@ -146,14 +146,14 @@ namespace mpmc_tp {
 	inline void MPMCThreadPool::threadJob(std::atomic_bool &active)
 	{
 		SimpleTaskType task;
-		while (_active.load(std::memory_order::memory_order_relaxed) && active.load(std::memory_order::memory_order_relaxed)) {
+		while (_active.load(std::memory_order::memory_order_acquire) && active.load(std::memory_order::memory_order_acquire)) {
 			if (_taskQueue.try_dequeue(task)) {
 				if (task)
 					task();
 			} else {
 				std::unique_lock<std::mutex> lock(_mutex);
 				_condVar.wait(lock, [this, &active]()->bool{
-					return !_active.load(std::memory_order::memory_order_relaxed) || !active.load(std::memory_order::memory_order_relaxed) || _taskQueue.size_approx() > 0;
+					return !_active.load(std::memory_order::memory_order_acquire) || !active.load(std::memory_order::memory_order_acquire) || _taskQueue.size_approx() > 0;
 				});
 			}
 		}

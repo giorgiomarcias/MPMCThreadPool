@@ -46,14 +46,12 @@ int main(int argc, char *argv[])
 
 	while (flag.test_and_set())
 		;
-	std::cout << "Adding 2 threads...";
-	std::cout.flush();
-	threadPool.expand(2);
-	std::cout << "total size: " << threadPool.size() << std::endl;
+	std::cout << "Adding 2 threads..." << std::endl;
 	flag.clear();
-
+	threadPool.expand(2);
 	while (flag.test_and_set())
 		;
+	std::cout << "Added 2 threads: total size: " << threadPool.size() << std::endl;
 	std::cout << "Sleep for 10 seconds..." << std::endl;
 	flag.clear();
 	std::this_thread::sleep_for(std::chrono::seconds(10));
@@ -127,10 +125,12 @@ int main(int argc, char *argv[])
 
 	while (flag.test_and_set())
 		;
-	std::cout << "Removing 2 threads...";
-	std::cout.flush();
+	std::cout << "Removing 2 threads..." << std::endl;
+	flag.clear();
 	threadPool.shrink(2);
-	std::cout << "total size: " << threadPool.size() << std::endl;
+	while (flag.test_and_set())
+		;
+	std::cout << "Removed 2 threads: total size: " << threadPool.size() << std::endl;
 	flag.clear();
 
 	taskPack2.wait();
