@@ -10,6 +10,7 @@
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
+#include <random>
 
 std::size_t sum_to(const std::size_t n)
 {
@@ -90,31 +91,12 @@ int main(int argc, char *argv[])
 
 
 
-	std::this_thread::sleep_for(std::chrono::seconds(2));
-	std::cout << "Blocking wait traits:" << std::endl;
-	mpmc_tp::TaskPack<std::size_t, mpmc_tp::TaskPackTraitsBlockingWait> taskPack1(101, std::chrono::milliseconds(10));
-	for (std::size_t i = 0; i < taskPack1.size() - 1; ++i)
-		taskPack1.setTaskAt(i, sum_to, i * 1000000);
-	taskPack1.setWaitTaskAt(taskPack1.size() - 1);
-	taskPack1.setCallback([&flag](const std::size_t i){
-		while (flag.test_and_set())
-			;
-		std::cout << "Done task " << i << std::endl;
-		flag.clear();
-	});
-	threadPool.submitTasks(producerToken, taskPack1.moveBegin(), taskPack1.moveEnd());
-	taskPack1.wait();
-	for (std::size_t i = 0; i < taskPack1.size() - 1; ++i)
-		std::cout << "Result at " << i << " : " << taskPack1.resultAt(i) << std::endl;
-
-
 
 	std::this_thread::sleep_for(std::chrono::seconds(2));
 	std::cout << "Blocking traits:" << std::endl;
-	mpmc_tp::TaskPack<void, mpmc_tp::TaskPackTraitsBlockingWait> taskPack2(101, std::chrono::milliseconds(10));
-	for (std::size_t i = 0; i < taskPack2.size() - 1; ++i)
+	mpmc_tp::TaskPack<void, mpmc_tp::TaskPackTraitsBlocking> taskPack2(100, std::chrono::milliseconds(10));
+	for (std::size_t i = 0; i < taskPack2.size(); ++i)
 		taskPack2.setTaskAt(i, count_to, i * 1000000);
-	taskPack2.setWaitTaskAt(taskPack2.size() - 1);
 	taskPack2.setCallback([&flag](const std::size_t i){
 		while (flag.test_and_set())
 			;
@@ -134,6 +116,33 @@ int main(int argc, char *argv[])
 	flag.clear();
 
 	taskPack2.wait();
+
+
+
+	std::cout << "Testing deadlocks:" << std::endl;
+	std::default_random_engine engine(std::chrono::steady_clock::now().time_since_epoch().count());
+	std::uniform_int_distribution<std::size_t> distributor(1, 1000);
+	std::cout << "Lock-free wait...";
+	std::cout.flush();
+	for (std::size_t test = 0; test < 100; ++test) {
+		mpmc_tp::TaskPack<std::size_t, mpmc_tp::TaskPackTraitsLockFree> pack(distributor(engine) + 1);
+		for (std::size_t i = 0; i < pack.size(); ++i)
+			pack.setTaskAt(i, sum_to, distributor(engine));
+		threadPool.submitTasks(producerToken, pack.moveBegin(), pack.moveEnd());
+		pack.wait();
+	}
+	std::cout << "done" << std::endl;
+	std::cout << "Blocking...";
+	std::cout.flush();
+	for (std::size_t test = 0; test < 100; ++test) {
+		mpmc_tp::TaskPack<std::size_t, mpmc_tp::TaskPackTraitsBlocking> pack(distributor(engine));
+		for (std::size_t i = 0; i < pack.size(); ++i)
+			pack.setTaskAt(i, sum_to, distributor(engine));
+		threadPool.submitTasks(producerToken, pack.moveBegin(), pack.moveEnd());
+		pack.wait();
+	}
+	std::cout << "done" << std::endl;
+	std::cout << "No deadlocks." << std::endl;
 
 	std::cout << "End" << std::endl;
 }

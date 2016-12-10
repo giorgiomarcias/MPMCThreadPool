@@ -41,7 +41,7 @@ namespace mpmc_tp {
 	{
 		while (_flag.test_and_set())
 			;
-		_active.store(false, std::memory_order::memory_order_release);
+		_active.store(false, std::memory_order::memory_order_seq_cst);
 		_condVar.notify_all();
 		for (std::size_t i = 0; i < _threads.size(); ++i)
 			if (_threads.at(i).joinable())
@@ -146,14 +146,14 @@ namespace mpmc_tp {
 	inline void MPMCThreadPool::threadJob(std::atomic_bool &active)
 	{
 		SimpleTaskType task;
-		while (_active.load(std::memory_order::memory_order_acquire) && active.load(std::memory_order::memory_order_acquire)) {
+		while (_active.load(std::memory_order::memory_order_seq_cst) && active.load(std::memory_order::memory_order_acquire)) {
 			if (_taskQueue.try_dequeue(task)) {
 				if (task)
 					task();
 			} else {
 				std::unique_lock<std::mutex> lock(_mutex);
 				_condVar.wait(lock, [this, &active]()->bool{
-					return !_active.load(std::memory_order::memory_order_acquire) || !active.load(std::memory_order::memory_order_acquire) || _taskQueue.size_approx() > 0;
+					return !_active.load(std::memory_order::memory_order_seq_cst) || !active.load(std::memory_order::memory_order_acquire) || _taskQueue.size_approx() > 0;
 				});
 			}
 		}
@@ -237,57 +237,32 @@ namespace mpmc_tp {
 
 
 	////////////////////////////////////////////////////////////////////////
-	// TaskPackTraitsBlockingWait METHODS
+	// TaskPackTraitsBlocking METHODS
 	////////////////////////////////////////////////////////////////////////
 
-	inline TaskPackTraitsBlockingWait::TaskPackTraitsBlockingWait(const std::size_t size) : TaskPackTraitsLockFree(size), _completed(false)
+	inline TaskPackTraitsBlocking::TaskPackTraitsBlocking(const std::size_t size) : TaskPackTraitsLockFree(size), _waitWoken(false)
 	{ }
 
 	template < class Rep, class Period >
-	inline TaskPackTraitsBlockingWait::TaskPackTraitsBlockingWait(const std::size_t size, const std::chrono::duration<Rep, Period> &interval) : TaskPackTraitsLockFree(size, interval), _completed(false)
+	inline TaskPackTraitsBlocking::TaskPackTraitsBlocking(const std::size_t size, const std::chrono::duration<Rep, Period> &interval) : TaskPackTraitsLockFree(size, interval), _waitWoken(false)
 	{ }
 
 	template < class Rep, class Period >
-	inline TaskPackTraitsBlockingWait::TaskPackTraitsBlockingWait(const std::size_t size, std::chrono::duration<Rep, Period> &&interval) : TaskPackTraitsLockFree(size, std::forward<std::chrono::duration<Rep, Period>>(interval)), _completed(false)
-	{ }
-
-	inline void TaskPackTraitsBlockingWait::wait() const
-	{
-		std::unique_lock<std::mutex> lock(_waitMutex);
-		_waitCondVar.wait(lock, [this]()->bool{ return _completed.load(std::memory_order::memory_order_acquire); });
-	}
-
-	inline void TaskPackTraitsBlockingWait::waitComplete() const
-	{
-		TaskPackTraitsLockFree::waitComplete();
-		_completed.store(true, std::memory_order::memory_order_release);
-		_waitCondVar.notify_all();
-	}
-
-	////////////////////////////////////////////////////////////////////////////
-
-
-
-	////////////////////////////////////////////////////////////////////////////
-	// TaskPackTraitsBlocking METHODS
-	////////////////////////////////////////////////////////////////////////////
-
-	inline TaskPackTraitsBlocking::TaskPackTraitsBlocking(const std::size_t size) : TaskPackTraitsBlockingWait(size)
+	inline TaskPackTraitsBlocking::TaskPackTraitsBlocking(const std::size_t size, std::chrono::duration<Rep, Period> &&interval) : TaskPackTraitsLockFree(size, std::forward<std::chrono::duration<Rep, Period>>(interval)), _waitWoken(false)
 	{ }
 
 	inline void TaskPackTraitsBlocking::signalTaskComplete(const std::size_t i)
 	{
-		TaskPackTraitsBlockingWait::signalTaskComplete(i);
-		_signalCondVar.notify_all();
+		TaskPackTraitsLockFree::signalTaskComplete(i);
+		while (_nCompletedTasks.load(std::memory_order::memory_order_relaxed) >= _size && !_waitWoken.load(std::memory_order::memory_order_relaxed))
+			_waitCondVar.notify_one();
 	}
 
-	inline void TaskPackTraitsBlocking::waitComplete() const
+	inline void TaskPackTraitsBlocking::wait() const
 	{
-		std::unique_lock<std::mutex> lock(_signalMutex);
-		while (_nCompletedTasks.load(std::memory_order::memory_order_relaxed) < _size)
-			_signalCondVar.wait(lock, [this]()->bool{ return _nCompletedTasks.load(std::memory_order::memory_order_relaxed) >= _size; });
-		_completed.store(true, std::memory_order::memory_order_release);
-		_waitCondVar.notify_all();
+		std::unique_lock<std::mutex> lock(_waitMutex);
+		_waitCondVar.wait(lock, [this]()->bool{ return _nCompletedTasks.load(std::memory_order::memory_order_relaxed) >= _size; });
+		_waitWoken.store(true, std::memory_order::memory_order_relaxed);
 	}
 
 	////////////////////////////////////////////////////////////////////////////
@@ -358,7 +333,7 @@ namespace mpmc_tp {
 	////////////////////////////////////////////////////////////////////////////
 
 	template < class R, class TaskPackTraits > template < class ...Args >
-	inline TaskPack<R, TaskPackTraits>::TaskPack(const std::size_t size, Args &&...args) : internal::TaskPackBase(size), TaskPackTraits(size, std::forward<Args>(args)...), _results(size, R()), _waitTaskIndex(std::numeric_limits<std::size_t>::max())
+	inline TaskPack<R, TaskPackTraits>::TaskPack(const std::size_t size, Args &&...args) : internal::TaskPackBase(size), TaskPackTraits(size, std::forward<Args>(args)...), _results(size, R())
 	{ }
 
 	template < class R, class TaskPackTraits > template < class F, class ...Args >
@@ -374,20 +349,6 @@ namespace mpmc_tp {
 	}
 
 	template < class R, class TaskPackTraits >
-	inline void TaskPack<R, TaskPackTraits>::setWaitTaskAt(const std::size_t i)
-	{
-		static_assert(std::is_void<decltype(std::declval<TaskPack<R, TaskPackTraits>>().waitComplete())>::value, "The TaskPackTraits template parameter must have a 'void waitComplete()' method.");
-		static_assert(std::is_void<decltype(std::declval<TaskPack<void, TaskPackTraits>>().setTraitsSize(std::declval<std::size_t>()))>::value, "TaskPackTraits template parameter must have a 'void setTraitsSize(std::size_t)' method.");
-		if (_waitTaskIndex < _tasks.size())
-			throw std::logic_error("The wait task can not be set more than once.");
-		if (_tasks.at(i))
-			throw std::logic_error("The wait task can not be set into a non-empty bin.");
-		_tasks.at(i) = std::bind(&TaskPack<R, TaskPackTraits>::waitComplete, this);
-		this->setTraitsSize(_tasks.size() - 1);
-		_waitTaskIndex = i;
-	}
-
-	template < class R, class TaskPackTraits >
 	inline const R & TaskPack<R, TaskPackTraits>::resultAt(const std::size_t i) const
 	{
 		return _results.at(i);
@@ -396,7 +357,7 @@ namespace mpmc_tp {
 
 
 	template < class TaskPackTraits > template < class ...Args >
-	inline TaskPack<void, TaskPackTraits>::TaskPack(const std::size_t size, Args &&...args) : internal::TaskPackBase(size), TaskPackTraits(size, std::forward<Args>(args)...), _waitTaskIndex(std::numeric_limits<std::size_t>::max())
+	inline TaskPack<void, TaskPackTraits>::TaskPack(const std::size_t size, Args &&...args) : internal::TaskPackBase(size), TaskPackTraits(size, std::forward<Args>(args)...)
 	{ }
 
 	template < class TaskPackTraits > template < class F, class ...Args >
@@ -409,20 +370,6 @@ namespace mpmc_tp {
 			g();
 			this->signalTaskComplete(i);
 		};
-	}
-
-	template < class TaskPackTraits >
-	inline void TaskPack<void, TaskPackTraits>::setWaitTaskAt(const std::size_t i)
-	{
-		static_assert(std::is_void<decltype(std::declval<TaskPack<void, TaskPackTraits>>().waitComplete())>::value, "The TaskPackTraits template parameter must have a 'void waitComplete()' method.");
-		static_assert(std::is_void<decltype(std::declval<TaskPack<void, TaskPackTraits>>().setTraitsSize(std::declval<std::size_t>()))>::value, "TaskPackTraits template parameter must have a 'void setTraitsSize(std::size_t)' method.");
-		if (_waitTaskIndex < _tasks.size())
-			throw std::logic_error("The wait task can not be set more than once.");
-		if (_tasks.at(i))
-			throw std::logic_error("The wait task can not be set into a non-empty bin.");
-		_tasks.at(i) = std::bind(&TaskPack<void, TaskPackTraits>::waitComplete, this);
-		this->setTraitsSize(_tasks.size() - 1);
-		_waitTaskIndex = i;
 	}
 
 	////////////////////////////////////////////////////////////////////////////

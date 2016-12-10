@@ -419,128 +419,16 @@ namespace mpmc_tp {
 
 
 
-	/// The TaskPackTraitsBlockingWait class is a base class for any
+	/// The TaskPackTraitsBlocking class is a base class for any
 	/// TaskPack traits, similarly to TaskPackTraitsLockFree.
 	/// This class adds a blocking 'wait' method.
 	/// This class is mostly lock-free, using an atomic counter to keep
 	/// information updated on the number of complete tasks, like
 	/// TaskPackTraitsLockFree. The only blocking part is, of course, the 'wait'
-	/// method. It relies on a mutex and a condition variable, as well as an
-	/// atomic bool. Deriving classes, whose users want to block themselves
-	/// calling 'wait', should atomically set (in 'release' order) the
-	/// '_completed' bool variable and notify blocked threads with the
-	/// '_waitCondVar' condition variable.
-	/// This traits are most suitable for a pack with many short tasks.
-	class TaskPackTraitsBlockingWait : public TaskPackTraitsLockFree {
+	/// method. It relies on a mutex and a condition variable.
+	/// This traits are most suitable for a pack with many tasks of any duration.
+	class TaskPackTraitsBlocking : public TaskPackTraitsLockFree {
 	public:
-		////////////////////////////////////////////////////////////////////////
-		// CONSTRUCTORS
-		////////////////////////////////////////////////////////////////////////
-
-		/**
-		 *   @brief Constructor with initial size. The default interval is 0.
-		 *   @param size     The size corresponds to the number of packed tasks.
-		 */
-		inline TaskPackTraitsBlockingWait(const std::size_t size);
-
-		/**
-		 *   @brief Constructor with initial size and check interval.
-		 *   @param size     The size corresponds to the number of packed tasks.
-		 *   @param interval The amount of time to wait between a check and the
-		 *                   next one while wating for completion (copied).
-		 */
-		template < class Rep, class Period >
-		inline TaskPackTraitsBlockingWait(const std::size_t size, const std::chrono::duration<Rep, Period> &interval);
-
-		/**
-		 *   @brief Constructor with initial size and check interval.
-		 *   @param size     The size corresponds to the number of packed tasks.
-		 *   @param interval The amount of time to wait between a check and the
-		 *                   next one while wating for completion (moved).
-		 */
-		template < class Rep, class Period >
-		inline TaskPackTraitsBlockingWait(const std::size_t size, std::chrono::duration<Rep, Period> &&interval);
-
-		/**
-		 *   @brief Copy constructor deleted.
-		 */
-		inline TaskPackTraitsBlockingWait(const TaskPackTraitsBlockingWait &) = delete;
-
-		/**
-		 *   @brief Move constructor deleted.
-		 */
-		inline TaskPackTraitsBlockingWait(TaskPackTraitsBlockingWait &&) = delete;
-
-		////////////////////////////////////////////////////////////////////////
-
-
-
-		////////////////////////////////////////////////////////////////////////
-		// ASSIGNMENT OPERATORS
-		////////////////////////////////////////////////////////////////////////
-
-		/**
-		 *   @brief Copy assignment operator deleted.
-		 */
-		inline TaskPackTraitsBlockingWait & operator=(const TaskPackTraitsBlockingWait &) = delete;
-
-		/**
-		 *   @brief Move assignment operator deleted.
-		 */
-		inline TaskPackTraitsBlockingWait & operator=(TaskPackTraitsBlockingWait &&) = delete;
-
-		////////////////////////////////////////////////////////////////////////
-
-
-
-		////////////////////////////////////////////////////////////////////////
-		// MAIN METHODS
-		////////////////////////////////////////////////////////////////////////
-
-		/**
-		 *   @brief Wait for the packed tasks to complete. It is blocking,
-		 *          relying on a mutex and a condition variable. Derived classes
-		 *          should provide a way to wake up waiting threads by setting
-		 *          '_completed' to true and notifying all waiting threads with
-		 *          '_waitCondVar'. It is better for a pack with many short
-		 *          tasks. Call this from the task producer.
-		 */
-		inline void wait() const override;
-
-		////////////////////////////////////////////////////////////////////////
-
-	protected:
-		/**
-		 *   @brief Wait for the packed tasks to complete. It is lock-free,
-		 *          relying on a loop, so it is better to use this traits for
-		 *          few, short tasks. Call this from the task producer.
-		 */
-		inline void waitComplete() const override;
-
-		mutable std::atomic_bool         _completed;   ///< Flag indicating whether all the tasks have been completed.
-		mutable std::mutex               _waitMutex;   ///< Mutex for blocking the waiting threads.
-		mutable std::condition_variable  _waitCondVar; ///< Condition variable for blocking/waking up waiting threads.
-	};
-
-
-
-	/// The TaskPackTraitsBlocking class is a base class for any TaskPack
-	/// traits, similarly to TaskPackTraitsLockFree.
-	/// This class adds a blocking 'signalCompletedTask' and 'wait' methods.
-	/// This class uses an atomic counter to keep information updated on the
-	/// number of complete tasks, like TaskPackTraitsLockFree.
-	/// The only blocking part is, of course, the 'wait' and the
-	/// 'signalCompleteTask' methods. They rely on mutexes and condition
-	/// variables, as well as atomic booleans. Deriving classes, whose users
-	/// want to block themselves calling 'wait', should atomically set (in
-	///  'release' order) the '_completed' bool variable and notify blocked
-	/// threads with the '_waitCondVar' condition variable. There is not need of
-	/// any interval here, since the 'wait' method blocks until a new task has
-	/// been completed (and notified).
-	/// This traits are most suitable for a pack with many short tasks.
-	class TaskPackTraitsBlocking : public TaskPackTraitsBlockingWait {
-	public:
-
 		////////////////////////////////////////////////////////////////////////
 		// CONSTRUCTORS
 		////////////////////////////////////////////////////////////////////////
@@ -550,6 +438,24 @@ namespace mpmc_tp {
 		 *   @param size     The size corresponds to the number of packed tasks.
 		 */
 		inline TaskPackTraitsBlocking(const std::size_t size);
+
+		/**
+		 *   @brief Constructor with initial size and check interval.
+		 *   @param size     The size corresponds to the number of packed tasks.
+		 *   @param interval The amount of time to wait between a check and the
+		 *                   next one while wating for completion (copied).
+		 */
+		template < class Rep, class Period >
+		inline TaskPackTraitsBlocking(const std::size_t size, const std::chrono::duration<Rep, Period> &interval);
+
+		/**
+		 *   @brief Constructor with initial size and check interval.
+		 *   @param size     The size corresponds to the number of packed tasks.
+		 *   @param interval The amount of time to wait between a check and the
+		 *                   next one while wating for completion (moved).
+		 */
+		template < class Rep, class Period >
+		inline TaskPackTraitsBlocking(const std::size_t size, std::chrono::duration<Rep, Period> &&interval);
 
 		/**
 		 *   @brief Copy constructor deleted.
@@ -595,18 +501,22 @@ namespace mpmc_tp {
 		 */
 		inline void signalTaskComplete(const std::size_t i) override;
 
+		/**
+		 *   @brief Wait for the packed tasks to complete. It is blocking,
+		 *          relying on a mutex and a condition variable. Derived classes
+		 *          should provide a way to wake up waiting threads by setting
+		 *          '_completed' to true and notifying all waiting threads with
+		 *          '_waitCondVar'. It is better for a pack with many short
+		 *          tasks. Call this from the task producer.
+		 */
+		inline void wait() const override;
+
 		////////////////////////////////////////////////////////////////////////
 
 	protected:
-		/**
-		 *   @brief Wait for the packed tasks to complete. It is lock-free,
-		 *          relying on a loop, so it is better to use this traits for
-		 *          few, short tasks. Call this from the task producer.
-		 */
-		inline void waitComplete() const override;
-
-		mutable std::mutex               _signalMutex;   ///< Mutex for blocking the wait method.
-		mutable std::condition_variable  _signalCondVar; ///< Condition variable for blocking/waking up wait method.
+		mutable std::atomic_bool         _waitWoken;   ///< Flag indicating whether the thread waiting for the end has been woken up.
+		mutable std::mutex               _waitMutex;   ///< Mutex for blocking the waiting threads.
+		mutable std::condition_variable  _waitCondVar; ///< Condition variable for blocking/waking up waiting threads.
 	};
 
 
@@ -775,11 +685,7 @@ namespace mpmc_tp {
 	/// The TaskPackTraits template parameter must provide at least:
 	/// - a constructor taking at least a std::size_t as first parameter,
 	/// - a 'void signalTaskComplete(std::size_t)' method for signaling a task
-	///     at position i has been completed, and
-	/// - a 'void waitComplete()' method for waiting to the end of the tasks.
-	/// NOTE: the size of the task container is always one plus the size
-	/// given as parameter to the constructors and one plus the size given to
-	/// the traits constructor.
+	///     at position i has been completed.
 	template < class R, class TaskPackTraits = TaskPackTraitsDefault >
 	class TaskPack : public internal::TaskPackBase, public TaskPackTraits {
 	protected:
@@ -845,15 +751,6 @@ namespace mpmc_tp {
 		inline void setTaskAt(const std::size_t i, F &&f, Args &&...args);
 
 		/**
-		 *   @brief Set the wait task at position i. It can be called at most
-		 *          once, otherwise a std::logic_error is thrown.
-		 *   @param i        The index of the container where to store the wait
-		 *                   task.
-		 */
-		inline void setWaitTaskAt(const std::size_t i);
-
-
-		/**
 		 *   @brief Get the result of the task at position i.
 		 *   @param i        Index of the task result to access.
 		 *   @return The result of the task at position i.
@@ -866,11 +763,19 @@ namespace mpmc_tp {
 
 	private:
 		Container<R>  _results;       ///< Container to store the result of the tasks.
-		std::size_t   _waitTaskIndex; ///< Index of the wait task.
 	};
 
 
 
+	/// The TaskPack class here specializes for void-return tasks.
+	/// It needs only one template parameter:
+	/// @param TaskPackTraits  is a class for handling signals and the wait task
+	///                        whenever a task has been completed and when all
+	///                        tasks have been completed, respectively.
+	/// The TaskPackTraits template parameter must provide at least:
+	/// - a constructor taking at least a std::size_t as first parameter,
+	/// - a 'void signalTaskComplete(std::size_t)' method for signaling a task
+	///     at position i has been completed.
 	template < class TaskPackTraits >
 	class TaskPack<void, TaskPackTraits> : public internal::TaskPackBase, public TaskPackTraits {
 	public:
@@ -932,18 +837,7 @@ namespace mpmc_tp {
 		template < class F, class ...Args >
 		inline void setTaskAt(const std::size_t i, F &&f, Args &&...args);
 
-		/**
-		 *   @brief Set the wait task at position i. It can be called at most
-		 *          once, otherwise a std::logic_error is thrown.
-		 *   @param i        The index of the container where to store the wait
-		 *                   task.
-		 */
-		inline void setWaitTaskAt(const std::size_t i);
-
 		////////////////////////////////////////////////////////////////////////
-
-	private:
-		std::size_t   _waitTaskIndex; ///< Index of the wait task.
 
 	};
 
