@@ -243,6 +243,7 @@ namespace mpmc_tp {
 		mutable std::atomic_flag         _flag;     ///< Atomic flag for lock-free mutual exclusion.
 		std::deque<std::thread>          _threads;  ///< Array of thread objects.
 		std::deque<std::atomic_bool>     _actives;  ///< Signals for stopping the threads.
+		std::atomic_size_t               _nActives; ///< Number of active threads.
 		ConcurrentQueue<SimpleTaskType>  _taskQueue;///< Queue of tasks.
 		std::atomic_bool                 _active;   ///< Signal for stopping the threads.
 		std::mutex                       _mutex;    ///< Mutex for blocking the threads when the queue is empty.

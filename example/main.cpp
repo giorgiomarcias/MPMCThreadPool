@@ -57,13 +57,15 @@ int main(int argc, char *argv[])
 	flag.clear();
 	std::this_thread::sleep_for(std::chrono::seconds(10));
 
-	for (std::size_t i = 10; i < 20; ++i)
+	for (std::size_t i = 10; i < 20; ++i) {
 		threadPool.submitTask(producerToken, [&flag, i](){
 			while (flag.test_and_set())
 				;
 			std::cout << "Done task " << i << std::endl;
 			flag.clear();
 		});
+		std::this_thread::sleep_for(std::chrono::milliseconds(30));
+	}
 
 	while (flag.test_and_set())
 		;
@@ -124,7 +126,7 @@ int main(int argc, char *argv[])
 	std::uniform_int_distribution<std::size_t> distributor(1, 1000);
 	std::cout << "Lock-free wait...";
 	std::cout.flush();
-	for (std::size_t test = 0; test < 100; ++test) {
+	for (std::size_t test = 0; test < 1000; ++test) {
 		mpmc_tp::TaskPack<std::size_t, mpmc_tp::TaskPackTraitsLockFree> pack(distributor(engine) + 1);
 		for (std::size_t i = 0; i < pack.size(); ++i)
 			pack.setTaskAt(i, sum_to, distributor(engine));
@@ -134,7 +136,7 @@ int main(int argc, char *argv[])
 	std::cout << "done" << std::endl;
 	std::cout << "Blocking...";
 	std::cout.flush();
-	for (std::size_t test = 0; test < 100; ++test) {
+	for (std::size_t test = 0; test < 1000; ++test) {
 		mpmc_tp::TaskPack<std::size_t, mpmc_tp::TaskPackTraitsBlocking> pack(distributor(engine));
 		for (std::size_t i = 0; i < pack.size(); ++i)
 			pack.setTaskAt(i, sum_to, distributor(engine));
