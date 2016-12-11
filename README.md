@@ -28,9 +28,6 @@ It takes a `TaskPackTraits` template parameter which actually provides the means
 There three types of trait classes provided that one can use:
 - `TaskPackTraitsLockFree` is completely lock-free and waits the end of the computation by running a loop on a counter.
     This is better suited for few, very short tasks.
-- `TaskPackTraitsBlockingWait` is mostly lock-free.
-    It can add a task to the pack which counts the completed tasks and unblocks any thread waiting for the completion to come.
-    Since the counter is lock-free and always running, this class is better suited for short tasks, even being a high number.
 - `TaskPackTraitsBlocking` provides a task which waits for the other tasks to complete, one by one, so not wasting CPU cycles.
     When all the tasks are complete, it wakes up any waiting thread.
     This is better suited for any number of mid-to-long tasks.
