@@ -15,7 +15,7 @@ The `MPMCThreadPool` class is almost entirely **lock-free**.
 *Almost entirely* means that its methods are lock-free, as long as there are tasks to process.
 Even methods for pushing tasks are lock-free.
 Also resizing methods are lock-free.
-The only part that is blocking is the work of the threads: as long as the queue is not empty they keep dequeuing in a lock-free manner; when they see that the queue is empty then they block into a condition variable and are woken up as soon as at least a task is enqueued.
+The only part that is blocking is the work of the threads: as long as the queue is not empty they keep dequeuing in a lock-free manner; when they see that the queue is empty then they block into a condition variable and are woken up as soon as at least one task is enqueued.
 The blocking part is designed by choice for avoiding wasting resources, for example in interactive applications where most of the time they are waiting for user commands.
 In this case, having a number of threads running non-stop doing nothing would drain battery in vain.
 
@@ -25,7 +25,7 @@ It is possible to submit tasks to the pool from any thread.
 
 In order to simplify the coder's life, there is a `TaskPack` template class for collecting the tasks to submit and managing the synchronization.
 It takes a `TaskPackTraits` template parameter which actually provides the means of synchronization.
-There three types of trait classes provided that one can use:
+There are two types of trait classes provided that one can use:
 - `TaskPackTraitsLockFree` is completely lock-free and waits the end of the computation by running a loop on a counter.
     This is better suited for few, very short tasks.
 - `TaskPackTraitsBlocking` provides a task which waits for the other tasks to complete, one by one, so not wasting CPU cycles.
